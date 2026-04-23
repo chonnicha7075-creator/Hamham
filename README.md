@@ -140,7 +140,7 @@ Keyword matching is exact-substring (case-insensitive). If your NPC is called "R
 
 ## 📜 License
 
-MIT — use it, modify it, share it, sell it if you can find someone to buy. Just don't claim you wrote it.
+MIT — Do not modify, resell, or use this product commercially. 
 
 ## 🌹 Credits
 
