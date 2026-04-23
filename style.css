@@ -1,0 +1,1052 @@
+/* ============================================
+   HAMHAM ✿ Living World Memory
+   Strawberry Victorian Dream theme
+   ============================================ */
+
+:root {
+    --hamham-pink-50:  #FBEAF0;
+    --hamham-pink-100: #F4C0D1;
+    --hamham-pink-200: #ED93B1;
+    --hamham-pink-400: #D4537E;
+    --hamham-pink-600: #993556;
+    --hamham-pink-800: #72243E;
+    --hamham-pink-900: #4B1528;
+
+    --hamham-teal-50:  #E1F5EE;
+    --hamham-teal-400: #1D9E75;
+    --hamham-teal-800: #04342C;
+
+    --hamham-red-50:   #FCEBEB;
+    --hamham-red-400:  #E24B4A;
+    --hamham-red-800:  #501313;
+
+    --hamham-amber-50: #FAEEDA;
+    --hamham-amber-400:#BA7517;
+    --hamham-amber-800:#412402;
+
+    --hamham-purple-50:  #EEEDFE;
+    --hamham-purple-400: #7F77DD;
+    --hamham-purple-800: #3C3489;
+
+    --hamham-gray-50:  #F1EFE8;
+    --hamham-gray-200: #B4B2A9;
+    --hamham-gray-400: #888780;
+    --hamham-gray-800: #2C2C2A;
+
+    --hamham-bg:       #FFF8FB;
+    --hamham-bg-soft:  #FBEAF0;
+    --hamham-text:     #2C2C2A;
+    --hamham-text-soft:#72243E;
+    --hamham-border:   rgba(212, 83, 126, 0.18);
+    --hamham-border-strong: rgba(212, 83, 126, 0.35);
+
+    --hamham-shadow-soft: 0 2px 14px rgba(153, 53, 86, 0.12);
+    --hamham-shadow-hover:0 6px 24px rgba(153, 53, 86, 0.22);
+    --hamham-shadow-panel:0 12px 48px rgba(75, 21, 40, 0.28);
+
+    --hamham-radius-sm: 6px;
+    --hamham-radius-md: 10px;
+    --hamham-radius-lg: 14px;
+    --hamham-radius-xl: 20px;
+}
+
+/* ============================================
+   Extension settings block (inside Extensions > HAMHAM drawer)
+   ============================================ */
+.hamham-settings {
+    padding: 6px 0;
+}
+.hamham-settings .hamham-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hamham-border);
+}
+.hamham-settings .hamham-row:last-child {
+    border-bottom: none;
+}
+.hamham-settings .hamham-row label {
+    font-size: 13px;
+    color: inherit;
+    flex: 1;
+    cursor: pointer;
+}
+.hamham-settings .hamham-row .hint {
+    font-size: 11px;
+    opacity: 0.7;
+    margin-top: 2px;
+}
+.hamham-settings h4 {
+    margin: 4px 0 8px;
+    font-weight: 500;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.hamham-settings .hamham-brand-mini {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--hamham-pink-50);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.hamham-settings .hamham-brand-mini svg {
+    width: 14px;
+    height: 14px;
+}
+.hamham-settings button {
+    font-size: 12px;
+    padding: 5px 12px;
+}
+.hamham-settings .hamham-danger-btn {
+    color: var(--hamham-red-800) !important;
+    border-color: rgba(226, 75, 74, 0.5) !important;
+}
+
+/* ============================================
+   Floating icon (corner of screen)
+   ============================================ */
+#hamham-floating {
+    position: fixed;
+    z-index: 9000;
+    right: 24px;
+    bottom: 80px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FBEAF0 0%, #F4C0D1 100%);
+    box-shadow: var(--hamham-shadow-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    user-select: none;
+    border: 1.5px solid rgba(255, 255, 255, 0.7);
+}
+#hamham-floating:hover {
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: var(--hamham-shadow-hover);
+}
+#hamham-floating:active {
+    transform: scale(0.96);
+}
+#hamham-floating.dragging {
+    transition: none;
+    cursor: grabbing;
+}
+#hamham-floating.hamham-hidden {
+    display: none;
+}
+#hamham-floating .hamham-floating-inner {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#hamham-floating .hamham-floating-inner svg {
+    width: 32px;
+    height: 32px;
+}
+#hamham-floating .hamham-pulse {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid var(--hamham-pink-400);
+    opacity: 0;
+    pointer-events: none;
+    animation: hamham-pulse-ring 2s ease-out infinite;
+}
+@keyframes hamham-pulse-ring {
+    0%   { transform: scale(0.9); opacity: 0.6; }
+    100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* ============================================
+   Main panel (floating modal)
+   ============================================ */
+#hamham-panel {
+    position: fixed;
+    z-index: 9001;
+    right: 24px;
+    bottom: 140px;
+    width: 480px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 160px);
+    background: var(--hamham-bg);
+    border-radius: var(--hamham-radius-xl);
+    box-shadow: var(--hamham-shadow-panel);
+    border: 1px solid var(--hamham-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: var(--hamham-text);
+    font-family: inherit;
+    animation: hamham-panel-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#hamham-panel.hamham-hidden {
+    display: none;
+}
+@keyframes hamham-panel-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ============================================
+   Header
+   ============================================ */
+.hamham-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: linear-gradient(135deg, #FBEAF0 0%, #F4C0D1 100%);
+    border-bottom: 1px solid var(--hamham-border);
+    cursor: grab;
+    gap: 10px;
+    flex-shrink: 0;
+}
+.hamham-header:active {
+    cursor: grabbing;
+}
+.hamham-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.hamham-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(75, 21, 40, 0.15);
+}
+.hamham-logo svg {
+    width: 22px;
+    height: 22px;
+}
+.hamham-brand {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--hamham-pink-900);
+    letter-spacing: 0.3px;
+}
+.hamham-tagline {
+    font-size: 10.5px;
+    color: var(--hamham-pink-800);
+    opacity: 0.75;
+    margin-top: 1px;
+}
+.hamham-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.hamham-char-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--hamham-pink-900);
+    max-width: 140px;
+}
+.hamham-char-badge .hamham-char-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.hamham-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--hamham-teal-400);
+    flex-shrink: 0;
+}
+.hamham-dot.empty {
+    background: var(--hamham-gray-200);
+}
+.hamham-icon-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(255, 255, 255, 0.5);
+    color: var(--hamham-pink-800);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+    padding: 0;
+}
+.hamham-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+/* ============================================
+   Stats strip
+   ============================================ */
+.hamham-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 12px 18px;
+    background: var(--hamham-bg);
+    flex-shrink: 0;
+}
+.hamham-stat {
+    background: white;
+    border-radius: var(--hamham-radius-md);
+    padding: 9px 11px;
+    border: 1px solid var(--hamham-border);
+}
+.hamham-stat-label {
+    font-size: 10.5px;
+    color: var(--hamham-pink-800);
+    opacity: 0.75;
+    font-weight: 500;
+    margin: 0;
+}
+.hamham-stat-value {
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--hamham-pink-900);
+    margin: 2px 0 0;
+    line-height: 1;
+}
+
+/* ============================================
+   Tabs
+   ============================================ */
+.hamham-tabs {
+    display: flex;
+    padding: 0 18px;
+    background: var(--hamham-bg);
+    border-bottom: 1px solid var(--hamham-border);
+    flex-shrink: 0;
+    overflow-x: auto;
+}
+.hamham-tab {
+    flex: 1;
+    padding: 9px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--hamham-gray-400);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.hamham-tab:hover {
+    color: var(--hamham-pink-800);
+}
+.hamham-tab.active {
+    color: var(--hamham-pink-400);
+    border-bottom-color: var(--hamham-pink-400);
+}
+.hamham-tab svg {
+    flex-shrink: 0;
+}
+
+/* ============================================
+   Content area
+   ============================================ */
+.hamham-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 18px;
+    background: var(--hamham-bg);
+    scrollbar-width: thin;
+    scrollbar-color: var(--hamham-pink-200) transparent;
+}
+.hamham-content::-webkit-scrollbar {
+    width: 6px;
+}
+.hamham-content::-webkit-scrollbar-thumb {
+    background: var(--hamham-pink-200);
+    border-radius: 3px;
+}
+
+/* ============================================
+   Footer
+   ============================================ */
+.hamham-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 18px;
+    background: white;
+    border-top: 1px solid var(--hamham-border);
+    gap: 8px;
+    flex-shrink: 0;
+}
+.hamham-footer-left {
+    display: flex;
+    gap: 6px;
+}
+.hamham-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: var(--hamham-radius-sm);
+    border: 1px solid var(--hamham-border-strong);
+    background: white;
+    color: var(--hamham-pink-800);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.hamham-btn:hover {
+    background: var(--hamham-pink-50);
+    transform: translateY(-1px);
+}
+.hamham-btn:active {
+    transform: translateY(0);
+}
+.hamham-btn.small {
+    padding: 5px 10px;
+    font-size: 11.5px;
+}
+.hamham-btn.danger {
+    color: var(--hamham-red-800);
+    border-color: rgba(226, 75, 74, 0.4);
+}
+.hamham-btn.danger:hover {
+    background: var(--hamham-red-50);
+}
+.hamham-btn.primary {
+    background: var(--hamham-pink-400);
+    color: white;
+    border-color: var(--hamham-pink-400);
+}
+.hamham-btn.primary:hover {
+    background: var(--hamham-pink-600);
+    border-color: var(--hamham-pink-600);
+}
+
+/* ============================================
+   Atlas tab
+   ============================================ */
+.hamham-atlas-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.hamham-map {
+    position: relative;
+    width: 100%;
+    height: 300px;
+    background: linear-gradient(180deg, #FBEAF0 0%, #F4C0D1 100%);
+    border-radius: var(--hamham-radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--hamham-border);
+}
+.hamham-map svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.hamham-map-pin {
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+.hamham-map-pin:hover {
+    transform: scale(1.2);
+    transform-origin: center;
+}
+.hamham-map-popup {
+    position: absolute;
+    background: white;
+    border: 1px solid var(--hamham-pink-200);
+    border-radius: var(--hamham-radius-md);
+    padding: 10px 12px;
+    font-size: 11px;
+    min-width: 160px;
+    max-width: 220px;
+    box-shadow: var(--hamham-shadow-soft);
+    z-index: 10;
+    pointer-events: none;
+}
+.hamham-map-popup .name {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--hamham-pink-900);
+    margin-bottom: 2px;
+}
+.hamham-map-popup .rel {
+    font-size: 10.5px;
+    color: var(--hamham-pink-600);
+    margin-bottom: 4px;
+}
+.hamham-map-popup .quote {
+    font-style: italic;
+    color: var(--hamham-gray-400);
+    font-size: 10.5px;
+    line-height: 1.4;
+}
+.hamham-legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 10.5px;
+    color: var(--hamham-text-soft);
+    padding: 0 2px;
+}
+.hamham-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.hamham-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid white;
+}
+
+/* Atlas add row */
+.hamham-add-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+.hamham-input {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: var(--hamham-radius-sm);
+    border: 1px solid var(--hamham-border-strong);
+    background: white;
+    font-size: 12px;
+    color: var(--hamham-text);
+    min-width: 0;
+}
+.hamham-input:focus {
+    outline: none;
+    border-color: var(--hamham-pink-400);
+    box-shadow: 0 0 0 2px rgba(212, 83, 126, 0.15);
+}
+.hamham-select {
+    padding: 7px 8px;
+    border-radius: var(--hamham-radius-sm);
+    border: 1px solid var(--hamham-border-strong);
+    background: white;
+    font-size: 12px;
+    color: var(--hamham-text);
+}
+
+/* Location / NPC lists */
+.hamham-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.hamham-list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: white;
+    border: 1px solid var(--hamham-border);
+    border-radius: var(--hamham-radius-md);
+    font-size: 12px;
+}
+.hamham-list-item .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.hamham-list-item .name {
+    flex: 1;
+    font-weight: 500;
+    color: var(--hamham-pink-900);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.hamham-list-item .meta {
+    font-size: 10.5px;
+    color: var(--hamham-gray-400);
+}
+.hamham-list-item .remove {
+    background: none;
+    border: none;
+    color: var(--hamham-gray-400);
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 13px;
+    border-radius: 4px;
+}
+.hamham-list-item .remove:hover {
+    color: var(--hamham-red-400);
+    background: var(--hamham-red-50);
+}
+.hamham-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--hamham-pink-800);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 10px 0 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* ============================================
+   Constellation tab
+   ============================================ */
+.hamham-constellation-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.hamham-constellation {
+    width: 100%;
+    height: 320px;
+    background: radial-gradient(ellipse at center, #FFFFFF 0%, #FBEAF0 70%, #F4C0D1 100%);
+    border-radius: var(--hamham-radius-lg);
+    border: 1px solid var(--hamham-border);
+    position: relative;
+    overflow: hidden;
+}
+.hamham-constellation svg {
+    width: 100%;
+    height: 100%;
+}
+.hamham-const-node {
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+.hamham-const-node:hover {
+    transform: scale(1.1);
+    transform-origin: center;
+}
+.hamham-const-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--hamham-gray-400);
+    font-size: 12px;
+}
+.hamham-const-detail {
+    background: white;
+    border: 1px solid var(--hamham-border);
+    border-radius: var(--hamham-radius-md);
+    padding: 12px;
+    margin-top: 8px;
+    display: none;
+}
+.hamham-const-detail.active {
+    display: block;
+    animation: hamham-fade-in 0.2s ease;
+}
+@keyframes hamham-fade-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.hamham-const-detail .top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.hamham-const-detail .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--hamham-pink-50);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: var(--hamham-pink-900);
+    font-size: 14px;
+}
+.hamham-const-detail .info {
+    flex: 1;
+    min-width: 0;
+}
+.hamham-const-detail .info .name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--hamham-pink-900);
+}
+.hamham-const-detail .info .sub {
+    font-size: 11px;
+    color: var(--hamham-gray-400);
+}
+.hamham-const-detail .rel-pill {
+    background: var(--hamham-pink-50);
+    color: var(--hamham-pink-900);
+    padding: 6px 10px;
+    border-radius: var(--hamham-radius-sm);
+    font-size: 11.5px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+.hamham-bond-bar {
+    height: 6px;
+    background: var(--hamham-pink-50);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 6px 0;
+}
+.hamham-bond-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--hamham-pink-200), var(--hamham-pink-400));
+    transition: width 0.3s ease;
+}
+.hamham-const-detail .stats {
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    color: var(--hamham-text);
+}
+.hamham-const-detail .stats .label {
+    color: var(--hamham-gray-400);
+}
+
+/* ============================================
+   Memory tab
+   ============================================ */
+.hamham-memory-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.hamham-memory-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+.hamham-memory-card {
+    background: white;
+    border: 1px solid var(--hamham-border);
+    border-radius: var(--hamham-radius-md);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    flex-direction: column;
+}
+.hamham-memory-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--hamham-shadow-soft);
+}
+.hamham-memory-card .header {
+    height: 42px;
+    display: flex;
+    align-items: flex-end;
+    padding: 5px 11px;
+}
+.hamham-memory-card .header span {
+    font-size: 10.5px;
+    font-weight: 600;
+}
+.hamham-memory-card .body {
+    padding: 10px 11px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+.hamham-memory-card .title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--hamham-pink-900);
+    margin-bottom: 5px;
+}
+.hamham-memory-card .chars {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 6px;
+}
+.hamham-memory-card .chars .avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--hamham-pink-50);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: var(--hamham-pink-900);
+    font-size: 9px;
+}
+.hamham-memory-card .quote {
+    font-size: 10.5px;
+    font-style: italic;
+    color: var(--hamham-gray-400);
+    line-height: 1.4;
+    margin-bottom: 8px;
+    flex: 1;
+}
+.hamham-memory-card .tag {
+    font-size: 9.5px;
+    padding: 2px 7px;
+    border-radius: 99px;
+    font-weight: 500;
+    align-self: flex-start;
+}
+
+/* Emotion colors */
+.emo-romance  { background: var(--hamham-pink-50)   !important; color: var(--hamham-pink-900)   !important; }
+.emo-battle   { background: var(--hamham-red-50)    !important; color: var(--hamham-red-800)    !important; }
+.emo-mystery  { background: var(--hamham-purple-50) !important; color: var(--hamham-purple-800) !important; }
+.emo-victory  { background: var(--hamham-teal-50)   !important; color: var(--hamham-teal-800)   !important; }
+.emo-journey  { background: var(--hamham-amber-50)  !important; color: var(--hamham-amber-800)  !important; }
+
+/* ============================================
+   Atmosphere tab
+   ============================================ */
+.hamham-atmosphere-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.hamham-atmo-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+.hamham-atmo-card {
+    background: white;
+    border: 1px solid var(--hamham-border);
+    border-radius: var(--hamham-radius-md);
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.hamham-atmo-card:hover {
+    border-color: var(--hamham-pink-400);
+    background: var(--hamham-pink-50);
+}
+.hamham-atmo-card.active {
+    border-color: var(--hamham-pink-400);
+    background: var(--hamham-pink-50);
+    box-shadow: 0 0 0 2px rgba(212, 83, 126, 0.15);
+}
+.hamham-atmo-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.hamham-atmo-info {
+    flex: 1;
+    min-width: 0;
+}
+.hamham-atmo-info .name {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--hamham-pink-900);
+}
+.hamham-atmo-info .desc {
+    font-size: 10.5px;
+    color: var(--hamham-gray-400);
+    margin-top: 1px;
+}
+.hamham-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.hamham-slider-row label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--hamham-pink-800);
+    min-width: 70px;
+}
+.hamham-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--hamham-pink-100);
+    outline: none;
+}
+.hamham-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--hamham-pink-400);
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(75, 21, 40, 0.25);
+}
+.hamham-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--hamham-pink-400);
+    cursor: pointer;
+    border: 2px solid white;
+}
+
+/* Toggle switch */
+.hamham-toggle {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+}
+.hamham-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.hamham-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--hamham-gray-200);
+    transition: 0.25s;
+    border-radius: 20px;
+}
+.hamham-toggle-slider::before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background: white;
+    transition: 0.25s;
+    border-radius: 50%;
+}
+.hamham-toggle input:checked + .hamham-toggle-slider {
+    background: var(--hamham-pink-400);
+}
+.hamham-toggle input:checked + .hamham-toggle-slider::before {
+    transform: translateX(16px);
+}
+
+/* ============================================
+   Atmosphere canvas overlay (full screen particles)
+   ============================================ */
+#hamham-atmo-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 8999;
+    opacity: 0.8;
+}
+
+/* ============================================
+   Empty state
+   ============================================ */
+.hamham-empty {
+    text-align: center;
+    padding: 30px 16px;
+    color: var(--hamham-gray-400);
+    font-size: 12px;
+    background: white;
+    border: 1px dashed var(--hamham-border-strong);
+    border-radius: var(--hamham-radius-md);
+}
+.hamham-empty .icon {
+    font-size: 28px;
+    opacity: 0.5;
+    margin-bottom: 6px;
+    display: block;
+}
+.hamham-empty .title {
+    font-weight: 600;
+    color: var(--hamham-pink-800);
+    margin-bottom: 4px;
+}
+
+/* Modal dialog for adding entries */
+.hamham-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(75, 21, 40, 0.3);
+    z-index: 9100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: hamham-fade-in 0.18s ease;
+}
+.hamham-modal {
+    background: var(--hamham-bg);
+    border-radius: var(--hamham-radius-lg);
+    padding: 20px;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    box-shadow: var(--hamham-shadow-panel);
+    border: 1px solid var(--hamham-border);
+}
+.hamham-modal h3 {
+    margin: 0 0 14px;
+    font-size: 15px;
+    color: var(--hamham-pink-900);
+    font-weight: 600;
+}
+.hamham-modal .form-row {
+    margin-bottom: 10px;
+}
+.hamham-modal label {
+    display: block;
+    font-size: 11px;
+    color: var(--hamham-pink-800);
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+.hamham-modal .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+/* Responsive */
+@media (max-width: 540px) {
+    #hamham-panel {
+        right: 16px;
+        left: 16px;
+        bottom: 100px;
+        width: auto;
+    }
+    .hamham-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .hamham-memory-grid {
+        grid-template-columns: 1fr;
+    }
+    .hamham-atmo-grid {
+        grid-template-columns: 1fr;
+    }
+}
