@@ -378,10 +378,10 @@ const SHADOW_CSS = `
 .foot-btn.danger { color: #E24B4A; border-color: rgba(226, 75, 74, 0.3); }
 .foot-btn:active { transform: scale(0.95); }
 
-.modal-backdrop { position: fixed; inset: 0; background: rgba(75, 21, 40, 0.5); backdrop-filter: blur(3px); z-index: 10; display: flex; align-items: center; justify-content: center; animation: modal-fade 0.18s ease; padding: 12px; pointer-events: auto; }
+.modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(75, 21, 40, 0.55); backdrop-filter: blur(3px); z-index: 100; animation: modal-fade 0.18s ease; pointer-events: auto; }
 @keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
-.modal { background: #fff; border-radius: 16px; width: 100%; max-width: 380px; max-height: calc(100vh - 24px); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(75, 21, 40, 0.4); animation: modal-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
-@keyframes modal-pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+.modal { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); width: calc(100vw - 24px); max-width: 380px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); background: #fff; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(75, 21, 40, 0.4); animation: modal-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); z-index: 101; }
+@keyframes modal-pop { from { opacity: 0; transform: translateX(-50%) scale(0.92); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
 .modal-head { padding: 14px 16px; background: linear-gradient(135deg, #FBEAF0, #F4C0D1); border-bottom: 1px solid rgba(212, 83, 126, 0.15); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
 .modal-title { font-size: 14px; font-weight: 700; color: #4B1528; margin: 0; }
 .modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }
