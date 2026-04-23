@@ -1,6 +1,6 @@
 /* ============================================
-   HAMHAM v1.0.2 — Diagnostic
-   Nuclear inline styles · impossible to miss
+   HAMHAM v1.0.3
+   Fix: tap on icon · center panel · petals default
    ============================================ */
 
 import { extension_settings, getContext } from "../../../extensions.js";
@@ -8,7 +8,7 @@ import { saveSettingsDebounced, eventSource, event_types } from "../../../../scr
 
 const extensionName = "Hamham";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
-const VERSION = "1.0.2-diag";
+const VERSION = "1.0.3";
 
 const DEFAULT_SETTINGS = {
     iconVisible: true,
@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
     panelVisible: false,
     currentTab: 'atlas',
     iconPos: null,
-    atmosphere: { effect: 'none', intensity: 'medium' },
+    atmosphere: { effect: 'petals', intensity: 'subtle' },
     characters: {}
 };
 
@@ -29,15 +29,37 @@ const RELATIONSHIP_TYPES = {
     neutral: { label: 'Neutral', color: '#888780', bg: '#F1EFE8' }
 };
 
-const HAMSTER_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
-<circle cx="7" cy="7" r="2.5" fill="#ED93B1"/>
-<circle cx="17" cy="7" r="2.5" fill="#ED93B1"/>
-<circle cx="12" cy="12.5" r="7" fill="#F4C0D1"/>
-<circle cx="7.8" cy="13.5" r="1.8" fill="#ED93B1" opacity="0.7"/>
-<circle cx="16.2" cy="13.5" r="1.8" fill="#ED93B1" opacity="0.7"/>
-<circle cx="9.5" cy="11.5" r="0.9" fill="#4B1528"/>
-<circle cx="14.5" cy="11.5" r="0.9" fill="#4B1528"/>
-<ellipse cx="12" cy="14.5" rx="0.7" ry="0.5" fill="#4B1528"/>
+// Bigger, clearer hamster — explicit sizes not percentages
+const HAMSTER_SVG = `<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+<circle cx="12" cy="13" r="4.5" fill="#ED93B1"/>
+<circle cx="28" cy="13" r="4.5" fill="#ED93B1"/>
+<circle cx="12" cy="13" r="2.2" fill="#F4C0D1"/>
+<circle cx="28" cy="13" r="2.2" fill="#F4C0D1"/>
+<circle cx="20" cy="22" r="13" fill="#F4C0D1"/>
+<circle cx="13.5" cy="24.5" r="2.8" fill="#ED93B1" opacity="0.7"/>
+<circle cx="26.5" cy="24.5" r="2.8" fill="#ED93B1" opacity="0.7"/>
+<circle cx="16" cy="21" r="1.6" fill="#4B1528"/>
+<circle cx="24" cy="21" r="1.6" fill="#4B1528"/>
+<circle cx="16.6" cy="20.4" r="0.5" fill="#fff"/>
+<circle cx="24.6" cy="20.4" r="0.5" fill="#fff"/>
+<ellipse cx="20" cy="24.5" rx="1.3" ry="0.9" fill="#4B1528"/>
+<path d="M 18 25 Q 20 27 22 25" stroke="#4B1528" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+</svg>`;
+
+const HAMSTER_SVG_BIG = `<svg width="56" height="56" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+<circle cx="12" cy="13" r="4.5" fill="#ED93B1"/>
+<circle cx="28" cy="13" r="4.5" fill="#ED93B1"/>
+<circle cx="12" cy="13" r="2.2" fill="#F4C0D1"/>
+<circle cx="28" cy="13" r="2.2" fill="#F4C0D1"/>
+<circle cx="20" cy="22" r="13" fill="#F4C0D1"/>
+<circle cx="13.5" cy="24.5" r="2.8" fill="#ED93B1" opacity="0.7"/>
+<circle cx="26.5" cy="24.5" r="2.8" fill="#ED93B1" opacity="0.7"/>
+<circle cx="16" cy="21" r="1.6" fill="#4B1528"/>
+<circle cx="24" cy="21" r="1.6" fill="#4B1528"/>
+<circle cx="16.6" cy="20.4" r="0.5" fill="#fff"/>
+<circle cx="24.6" cy="20.4" r="0.5" fill="#fff"/>
+<ellipse cx="20" cy="24.5" rx="1.3" ry="0.9" fill="#4B1528"/>
+<path d="M 18 25 Q 20 27 22 25" stroke="#4B1528" stroke-width="0.8" fill="none" stroke-linecap="round"/>
 </svg>`;
 
 // ============================================
@@ -56,7 +78,7 @@ function log(msg, isError = false) {
 }
 
 // ============================================
-// Settings helpers
+// Settings
 // ============================================
 function getSettings() {
     try {
@@ -67,7 +89,7 @@ function getSettings() {
         for (const key of Object.keys(DEFAULT_SETTINGS)) {
             if (s[key] === undefined) s[key] = JSON.parse(JSON.stringify(DEFAULT_SETTINGS[key]));
         }
-        if (!s.atmosphere) s.atmosphere = { effect: 'none', intensity: 'medium' };
+        if (!s.atmosphere) s.atmosphere = { effect: 'petals', intensity: 'subtle' };
         if (!s.characters) s.characters = {};
         return s;
     } catch (e) {
@@ -123,42 +145,22 @@ function escapeHtml(s) {
 }
 
 // ============================================
-// FLOATING ICON — Shadow DOM + inline styles (nuclear)
+// Shadow DOM mount
 // ============================================
 let shadowHost = null;
 let shadowRoot = null;
 
 function buildShadowHost() {
-    // Remove existing if any
     const existing = document.getElementById('hamham-shadow-host');
     if (existing) existing.remove();
 
-    // Create host element with MAX z-index and position:fixed
     shadowHost = document.createElement('div');
     shadowHost.id = 'hamham-shadow-host';
-    shadowHost.setAttribute('style', `
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 0 !important;
-        height: 0 !important;
-        z-index: 2147483647 !important;
-        pointer-events: none !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: 0 !important;
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-    `.replace(/\s+/g, ' ').trim());
+    shadowHost.setAttribute('style', 'position:fixed !important;top:0 !important;left:0 !important;width:100vw !important;height:100vh !important;z-index:2147483647 !important;pointer-events:none !important;margin:0 !important;padding:0 !important;border:0 !important;');
 
-    // Append to documentElement (html) — can't be hidden by body styles
     document.documentElement.appendChild(shadowHost);
-
-    // Create shadow root — complete CSS isolation from SillyTavern
     shadowRoot = shadowHost.attachShadow({ mode: 'open' });
-
-    log('Shadow host attached to <html>');
+    log('Shadow host mounted (100vw x 100vh, pointer-events: none)');
     return shadowRoot;
 }
 
@@ -166,86 +168,102 @@ const SHADOW_CSS = `
 :host { all: initial; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Thai', sans-serif; }
 * { box-sizing: border-box; }
 
+/* Floating icon — pointer-events: auto is CRITICAL */
 .floater {
     position: fixed;
     right: 16px;
     top: 80px;
-    width: 58px;
-    height: 58px;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #FBEAF0 0%, #F4C0D1 100%);
+    background: linear-gradient(135deg, #FFF0F5 0%, #FBEAF0 50%, #F4C0D1 100%);
     border: 3px solid #fff;
-    box-shadow: 0 6px 20px rgba(212, 83, 126, 0.45), 0 2px 6px rgba(75, 21, 40, 0.2);
+    box-shadow: 0 8px 24px rgba(212, 83, 126, 0.5), 0 3px 8px rgba(75, 21, 40, 0.2);
     cursor: pointer;
     pointer-events: auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.2s;
-    animation: ham-pulse 2s ease-out 3;
-    touch-action: none;
+    animation: ham-entry 0.6s ease-out, ham-idle 3s ease-in-out 0.6s infinite;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 .floater.hidden { display: none; }
-.floater:active { transform: scale(0.92); }
-.floater .svg-wrap { width: 38px; height: 38px; pointer-events: none; }
+.floater.pressed { transform: scale(0.92); transition: transform 0.1s; }
 
-@keyframes ham-pulse {
-    0%, 100% { transform: scale(1); box-shadow: 0 6px 20px rgba(212, 83, 126, 0.45), 0 0 0 0 rgba(237, 147, 177, 0.7); }
-    50% { transform: scale(1.08); box-shadow: 0 6px 24px rgba(212, 83, 126, 0.6), 0 0 0 14px rgba(237, 147, 177, 0); }
+@keyframes ham-entry {
+    0% { opacity: 0; transform: scale(0) rotate(-180deg); }
+    60% { transform: scale(1.2) rotate(10deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+@keyframes ham-idle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
 }
 
+/* Panel — centered on mobile, corner on desktop */
 .panel {
     position: fixed;
-    bottom: 100px;
-    right: 16px;
-    width: min(92vw, 440px);
-    max-height: 80vh;
+    pointer-events: auto;
     background: #fff;
     border-radius: 20px;
-    box-shadow: 0 16px 48px rgba(75, 21, 40, 0.35), 0 0 0 1px rgba(212, 83, 126, 0.15);
+    box-shadow: 0 20px 60px rgba(75, 21, 40, 0.4), 0 0 0 1px rgba(212, 83, 126, 0.15);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    pointer-events: auto;
     color: #3d2030;
     animation: ham-slide 0.25s ease-out;
+
+    /* Mobile-first — centered, large */
+    top: 5vh;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(94vw, 480px);
+    max-height: 88vh;
 }
 .panel.hidden { display: none; }
 @keyframes ham-slide {
-    from { opacity: 0; transform: translateY(16px) scale(0.96); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    from { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.95); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
+/* Header */
 .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 16px;
+    padding: 12px 14px;
     background: linear-gradient(135deg, #FBEAF0, #F4C0D1);
     border-bottom: 1px solid rgba(212, 83, 126, 0.15);
+    flex-shrink: 0;
 }
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand-logo { width: 32px; height: 32px; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(212, 83, 126, 0.25); }
-.brand-logo svg { width: 22px; height: 22px; }
+.brand { display: flex; align-items: center; gap: 9px; }
+.brand-logo { width: 32px; height: 32px; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(212, 83, 126, 0.25); overflow: hidden; }
+.brand-logo svg { width: 32px; height: 32px; }
 .brand-name { font-weight: 700; font-size: 14px; color: #4B1528; line-height: 1; letter-spacing: 0.5px; }
 .brand-sub { font-size: 10px; color: #993556; margin-top: 2px; }
-.char-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: #fff; border-radius: 99px; font-size: 11px; color: #4B1528; font-weight: 500; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.char-dot { width: 6px; height: 6px; border-radius: 50%; background: #1D9E75; }
-.close-btn { width: 28px; height: 28px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.5); color: #72243E; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.close-btn:active { background: #fff; }
+.char-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; background: #fff; border-radius: 99px; font-size: 10.5px; color: #4B1528; font-weight: 500; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.char-dot { width: 5px; height: 5px; border-radius: 50%; background: #1D9E75; flex-shrink: 0; }
+.close-btn { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.6); color: #72243E; font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; pointer-events: auto; }
+.close-btn:active { background: #fff; transform: scale(0.9); }
 
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 16px; background: #fff9fb; }
-.stat { background: #fff; padding: 8px; border-radius: 8px; border: 1px solid rgba(212, 83, 126, 0.1); text-align: center; }
-.stat-label { font-size: 9px; color: #8b6676; text-transform: uppercase; letter-spacing: 0.5px; }
-.stat-value { font-size: 16px; font-weight: 700; color: #4B1528; margin-top: 2px; }
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 14px; background: #fff9fb; flex-shrink: 0; }
+.stat { background: #fff; padding: 8px 6px; border-radius: 8px; border: 1px solid rgba(212, 83, 126, 0.1); text-align: center; }
+.stat-label { font-size: 9px; color: #8b6676; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+.stat-value { font-size: 18px; font-weight: 700; color: #4B1528; margin-top: 2px; }
 
-.tabs { display: flex; padding: 0 16px; background: #fff9fb; border-bottom: 1px solid rgba(212, 83, 126, 0.1); overflow-x: auto; }
-.tab { padding: 10px 12px; font-size: 12px; color: #8b6676; cursor: pointer; border: none; background: none; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+/* Tabs */
+.tabs { display: flex; padding: 0 14px; background: #fff9fb; border-bottom: 1px solid rgba(212, 83, 126, 0.1); overflow-x: auto; flex-shrink: 0; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { padding: 10px 12px; font-size: 12px; color: #8b6676; cursor: pointer; border: none; background: none; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
 .tab.active { color: #D4537E; border-bottom-color: #D4537E; }
 
-.content { flex: 1; overflow-y: auto; padding: 14px 16px; }
+/* Content */
+.content { flex: 1; overflow-y: auto; padding: 12px 14px; -webkit-overflow-scrolling: touch; }
+.content::-webkit-scrollbar { width: 6px; }
+.content::-webkit-scrollbar-thumb { background: #F4C0D1; border-radius: 3px; }
 
 .empty { padding: 20px; text-align: center; color: #8b6676; font-size: 12px; background: #fff9fb; border-radius: 10px; line-height: 1.6; }
 .empty b { display: block; color: #D4537E; margin-bottom: 6px; font-size: 13px; }
@@ -253,27 +271,30 @@ const SHADOW_CSS = `
 .section { margin-top: 14px; }
 .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .section-title { font-size: 12px; font-weight: 600; color: #4B1528; }
-.add-btn { font-size: 11px; padding: 4px 10px; background: #D4537E; color: #fff; border: none; border-radius: 7px; cursor: pointer; font-weight: 500; }
-.add-btn:active { background: #993556; }
+.add-btn { font-size: 11px; padding: 5px 12px; background: #D4537E; color: #fff; border: none; border-radius: 7px; cursor: pointer; font-weight: 500; -webkit-tap-highlight-color: transparent; }
+.add-btn:active { background: #993556; transform: scale(0.96); }
 
 .list { display: flex; flex-direction: column; gap: 5px; }
-.list-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 11px; background: #fff9fb; border-radius: 8px; border: 1px solid rgba(212, 83, 126, 0.08); gap: 8px; }
+.list-item { display: flex; justify-content: space-between; align-items: center; padding: 9px 11px; background: #fff9fb; border-radius: 8px; border: 1px solid rgba(212, 83, 126, 0.08); gap: 8px; }
 .list-name { font-size: 12px; color: #4B1528; flex: 1; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .npc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .list-name small { color: #8b6676; font-size: 10px; }
-.del-btn { width: 24px; height: 24px; border-radius: 6px; border: none; background: transparent; color: #8b6676; cursor: pointer; font-size: 12px; flex-shrink: 0; }
+.del-btn { width: 26px; height: 26px; border-radius: 6px; border: none; background: transparent; color: #8b6676; cursor: pointer; font-size: 13px; flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
 .del-btn:active { background: #FCEBEB; color: #E24B4A; }
 
+/* Map */
 .map-wrap { position: relative; width: 100%; aspect-ratio: 5/3; background: #FBEAF0; border-radius: 12px; overflow: hidden; border: 1px solid rgba(212, 83, 126, 0.15); }
 .map-wrap svg { width: 100%; height: 100%; display: block; }
 .pin { position: absolute; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transform: translate(-50%, -50%); }
 
-.const-wrap { background: #FBEAF0; border-radius: 12px; padding: 0; border: 1px solid rgba(212, 83, 126, 0.15); overflow: hidden; }
+/* Constellation */
+.const-wrap { background: #FBEAF0; border-radius: 12px; border: 1px solid rgba(212, 83, 126, 0.15); overflow: hidden; }
 .const-wrap svg { width: 100%; display: block; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: #fff9fb; font-size: 10px; color: #8b6676; }
 .legend span { display: flex; align-items: center; gap: 4px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
+/* Memory */
 .mem-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
 .mem-card { background: #fff; border-radius: 10px; border: 1px solid rgba(212, 83, 126, 0.1); overflow: hidden; position: relative; }
 .mem-banner { padding: 6px 10px; font-size: 10px; font-weight: 600; }
@@ -285,24 +306,28 @@ const SHADOW_CSS = `
 .mem-card.emo-victory .mem-banner { background: #E1F5EE; color: #04342C; }
 .mem-card.emo-journey .mem-banner { background: #FAEEDA; color: #412402; }
 .mem-card.emo-mystery .mem-banner { background: #EEEDFE; color: #26215C; }
-.mem-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,0.9); border: none; cursor: pointer; font-size: 10px; color: #8b6676; }
+.mem-del { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.9); border: none; cursor: pointer; font-size: 10px; color: #8b6676; -webkit-tap-highlight-color: transparent; }
 
+/* Atmosphere */
 .atmos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
-.atmos-card { background: #fff; border: 2px solid rgba(212, 83, 126, 0.1); border-radius: 10px; padding: 12px 8px; cursor: pointer; text-align: center; }
+.atmos-card { background: #fff; border: 2px solid rgba(212, 83, 126, 0.1); border-radius: 10px; padding: 12px 8px; cursor: pointer; text-align: center; -webkit-tap-highlight-color: transparent; }
 .atmos-card.active { border-color: #D4537E; background: #FBEAF0; }
+.atmos-card:active { transform: scale(0.96); }
 .atmos-name { font-size: 12px; font-weight: 600; color: #4B1528; }
 .atmos-desc { font-size: 9px; color: #8b6676; margin-top: 2px; }
 
 .intensity-row { margin-top: 12px; padding: 10px; background: #fff9fb; border-radius: 10px; display: flex; align-items: center; gap: 10px; }
 .intensity-row label { font-size: 12px; font-weight: 500; color: #4B1528; }
 .seg { display: flex; gap: 4px; flex: 1; justify-content: flex-end; }
-.seg-btn { font-size: 10px; padding: 5px 10px; border: 1px solid rgba(212, 83, 126, 0.15); background: #fff; border-radius: 6px; cursor: pointer; color: #8b6676; }
+.seg-btn { font-size: 10px; padding: 6px 11px; border: 1px solid rgba(212, 83, 126, 0.15); background: #fff; border-radius: 6px; cursor: pointer; color: #8b6676; -webkit-tap-highlight-color: transparent; }
 .seg-btn.active { background: #D4537E; color: #fff; border-color: #D4537E; }
 
-.footer { display: flex; justify-content: space-between; padding: 10px 16px; background: #fff9fb; border-top: 1px solid rgba(212, 83, 126, 0.1); gap: 6px; }
+/* Footer */
+.footer { display: flex; justify-content: space-between; padding: 10px 14px; background: #fff9fb; border-top: 1px solid rgba(212, 83, 126, 0.1); gap: 6px; flex-shrink: 0; }
 .foot-btns { display: flex; gap: 4px; }
-.foot-btn { font-size: 11px; padding: 5px 10px; background: #fff; border: 1px solid rgba(212, 83, 126, 0.2); border-radius: 6px; cursor: pointer; color: #993556; }
+.foot-btn { font-size: 11px; padding: 6px 11px; background: #fff; border: 1px solid rgba(212, 83, 126, 0.2); border-radius: 6px; cursor: pointer; color: #993556; -webkit-tap-highlight-color: transparent; }
 .foot-btn.danger { color: #E24B4A; border-color: rgba(226, 75, 74, 0.3); }
+.foot-btn:active { transform: scale(0.95); }
 `;
 
 function mountUI() {
@@ -311,7 +336,7 @@ function mountUI() {
         shadowRoot.innerHTML = `
 <style>${SHADOW_CSS}</style>
 <div id="floater" class="floater" title="HAMHAM">
-    <div class="svg-wrap">${HAMSTER_SVG}</div>
+    ${HAMSTER_SVG}
 </div>
 <div id="panel" class="panel hidden">
     <div class="header">
@@ -340,66 +365,69 @@ function mountUI() {
             <button class="foot-btn" data-action="export">Export</button>
             <button class="foot-btn" data-action="refresh">Refresh</button>
         </div>
-        <button class="foot-btn danger" data-action="reset">Reset this character</button>
+        <button class="foot-btn danger" data-action="reset">Reset char</button>
     </div>
 </div>`;
 
-        // Wire up events INSIDE shadow root
-        const $root = $(shadowRoot);
         const floater = shadowRoot.getElementById('floater');
         const panel = shadowRoot.getElementById('panel');
 
-        // Drag support for floater
-        let dragStartX, dragStartY, dragStartR, dragStartT, dragging = false, moved = false;
-        floater.addEventListener('mousedown', onDragStart);
-        floater.addEventListener('touchstart', onDragStart, { passive: false });
-        function onDragStart(e) {
-            const ev = e.touches ? e.touches[0] : e;
-            dragStartX = ev.clientX;
-            dragStartY = ev.clientY;
-            const r = floater.getBoundingClientRect();
-            dragStartR = window.innerWidth - r.right;
-            dragStartT = r.top;
-            dragging = true;
-            moved = false;
-            e.preventDefault();
-        }
-        document.addEventListener('mousemove', onDragMove);
-        document.addEventListener('touchmove', onDragMove, { passive: false });
-        function onDragMove(e) {
-            if (!dragging) return;
-            const ev = e.touches ? e.touches[0] : e;
-            const dx = ev.clientX - dragStartX;
-            const dy = ev.clientY - dragStartY;
-            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved = true;
-            const nr = Math.max(8, Math.min(window.innerWidth - 64, dragStartR - dx));
-            const nt = Math.max(8, Math.min(window.innerHeight - 64, dragStartT + dy));
-            floater.style.right = nr + 'px';
-            floater.style.top = nt + 'px';
-            floater.style.bottom = 'auto';
-        }
-        document.addEventListener('mouseup', onDragEnd);
-        document.addEventListener('touchend', onDragEnd);
-        function onDragEnd() {
-            if (!dragging) return;
-            dragging = false;
-            if (moved) {
+        // ===== CRITICAL: Pointer Events API for tap detection =====
+        // Works on both mouse and touch, properly distinguishes tap vs drag
+        let pDown = false, pStartX = 0, pStartY = 0, pMoved = false;
+
+        floater.addEventListener('pointerdown', (e) => {
+            pDown = true;
+            pStartX = e.clientX;
+            pStartY = e.clientY;
+            pMoved = false;
+            floater.classList.add('pressed');
+            try { floater.setPointerCapture(e.pointerId); } catch {}
+        });
+
+        floater.addEventListener('pointermove', (e) => {
+            if (!pDown) return;
+            const dx = e.clientX - pStartX;
+            const dy = e.clientY - pStartY;
+            if (Math.abs(dx) > 6 || Math.abs(dy) > 6) pMoved = true;
+            if (pMoved) {
+                const r = floater.getBoundingClientRect();
+                const newRight = Math.max(8, Math.min(window.innerWidth - 68, window.innerWidth - r.right - dx));
+                const newTop = Math.max(8, Math.min(window.innerHeight - 68, r.top + dy));
+                floater.style.right = newRight + 'px';
+                floater.style.top = newTop + 'px';
+                floater.style.bottom = 'auto';
+                pStartX = e.clientX;
+                pStartY = e.clientY;
+            }
+        });
+
+        floater.addEventListener('pointerup', (e) => {
+            floater.classList.remove('pressed');
+            if (!pDown) return;
+            pDown = false;
+
+            if (pMoved) {
+                // save position
                 const r = floater.getBoundingClientRect();
                 getSettings().iconPos = {
                     right: Math.round(window.innerWidth - r.right),
                     top: Math.round(r.top)
                 };
                 save();
+                log('Icon dragged to right=' + Math.round(window.innerWidth - r.right));
+            } else {
+                // TAP — open panel
+                log('Icon tapped');
+                togglePanel();
             }
-        }
-
-        floater.addEventListener('click', () => {
-            if (moved) { moved = false; return; }
-            log('Floater clicked');
-            togglePanel();
         });
 
-        shadowRoot.getElementById('btn-close').addEventListener('click', closePanel);
+        floater.addEventListener('pointercancel', () => {
+            pDown = false;
+            pMoved = false;
+            floater.classList.remove('pressed');
+        });
 
         // Apply saved position
         const s = getSettings();
@@ -408,6 +436,9 @@ function mountUI() {
             if (typeof s.iconPos.top === 'number') { floater.style.top = s.iconPos.top + 'px'; floater.style.bottom = 'auto'; }
         }
         setFloaterVisible(s.iconVisible);
+
+        // Close button
+        shadowRoot.getElementById('btn-close').addEventListener('click', () => { log('Close clicked'); closePanel(); });
 
         // Tab clicks
         shadowRoot.querySelectorAll('.tab').forEach(tab => {
@@ -421,8 +452,8 @@ function mountUI() {
             });
         });
 
-        // Footer actions (delegated)
-        shadowRoot.getElementById('panel').addEventListener('click', (e) => {
+        // Footer
+        panel.addEventListener('click', (e) => {
             const btn = e.target.closest('.foot-btn');
             if (!btn) return;
             const action = btn.dataset.action;
@@ -435,7 +466,7 @@ function mountUI() {
             }
         });
 
-        // Content area click delegation
+        // Content area delegation
         shadowRoot.getElementById('content').addEventListener('click', (e) => {
             const el = e.target.closest('[data-action]');
             if (!el) return;
@@ -456,13 +487,11 @@ function mountUI() {
             }
         });
 
-        log('Shadow DOM UI mounted');
+        log('UI mounted · tap ready · petals default');
 
-        // Log actual position after mount for diagnostic
         setTimeout(() => {
             const r = floater.getBoundingClientRect();
-            log(`Icon pos: right=${Math.round(window.innerWidth - r.right)}px top=${Math.round(r.top)}px, size=${Math.round(r.width)}x${Math.round(r.height)}`);
-            log(`Viewport: ${window.innerWidth}x${window.innerHeight}`);
+            log(`Icon at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
         }, 100);
     } catch (e) {
         log('mountUI failed: ' + e.message, true);
@@ -475,13 +504,11 @@ function setFloaterVisible(visible) {
     if (!el) return;
     if (visible) el.classList.remove('hidden');
     else el.classList.add('hidden');
-    log('Icon ' + (visible ? 'shown' : 'hidden'));
 }
 
 function openPanel() {
     if (!shadowRoot) return;
-    const p = shadowRoot.getElementById('panel');
-    p.classList.remove('hidden');
+    shadowRoot.getElementById('panel').classList.remove('hidden');
     getSettings().panelVisible = true;
     save();
     refreshPanel();
@@ -620,12 +647,13 @@ function renderConstellation(c, data) {
                 ${Object.entries(RELATIONSHIP_TYPES).map(([k, r]) => `<span><span class="legend-dot" style="background:${r.color}"></span>${r.label}</span>`).join('')}
             </div>
         </div>
+        ${data.npcs.length === 0 ? '<div class="empty" style="margin-top:10px;padding:14px">Add NPCs in Atlas tab to see bonds</div>' : ''}
     `;
 }
 
 function renderMemory(c, data) {
     if (!data.memories.length) {
-        c.innerHTML = `<div class="empty"><b>No memories yet</b>Save important scenes from your roleplay</div><button class="add-btn" data-action="add-memory" style="margin-top:10px;width:100%;padding:10px">+ Add memory</button>`;
+        c.innerHTML = `<div class="empty"><b>No memories yet</b>Save important moments from your roleplay</div><button class="add-btn" data-action="add-memory" style="margin-top:10px;width:100%;padding:10px">+ Add memory</button>`;
         return;
     }
     const cards = data.memories.map((m, i) => `
@@ -645,11 +673,11 @@ function renderAtmosphere(c) {
     const s = getSettings();
     const effects = [
         { id: 'none', name: 'None', desc: 'Off' },
-        { id: 'petals', name: 'Sakura', desc: 'Pink petals' },
-        { id: 'rain', name: 'Rain', desc: 'Light shower' },
-        { id: 'snow', name: 'Snow', desc: 'Snowfall' },
-        { id: 'fireflies', name: 'Fireflies', desc: 'Warm glow' },
-        { id: 'stars', name: 'Stars', desc: 'Twinkle' },
+        { id: 'petals', name: 'Sakura 🌸', desc: 'Pink petals' },
+        { id: 'rain', name: 'Rain 🌧️', desc: 'Light shower' },
+        { id: 'snow', name: 'Snow ❄️', desc: 'Snowfall' },
+        { id: 'fireflies', name: 'Fireflies ✨', desc: 'Warm glow' },
+        { id: 'stars', name: 'Stars ⭐', desc: 'Twinkle' },
         { id: 'dust', name: 'Dust', desc: 'Warm motes' }
     ];
     c.innerHTML = `
@@ -691,7 +719,7 @@ function startAtmosphere(effect, intensity) {
     const resize = () => { atmosCanvas.width = window.innerWidth; atmosCanvas.height = window.innerHeight; };
     resize();
     window.addEventListener('resize', resize);
-    const count = intensity === 'subtle' ? 20 : intensity === 'dramatic' ? 80 : 40;
+    const count = intensity === 'subtle' ? 15 : intensity === 'dramatic' ? 60 : 30;
     atmosParticles = [];
     for (let i = 0; i < count; i++) atmosParticles.push(newParticle(effect));
     function loop() {
@@ -707,12 +735,13 @@ function startAtmosphere(effect, intensity) {
         atmosRAF = requestAnimationFrame(loop);
     }
     loop();
+    log('Atmosphere started: ' + effect + ' (' + intensity + ')');
 }
 
 function newParticle(effect) {
     const w = window.innerWidth, h = window.innerHeight;
     const p = { x: Math.random() * w, y: Math.random() * h - h, vx: 0, vy: 0, size: 3, rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.05, opacity: 0.5 + Math.random() * 0.3, hue: Math.random() };
-    if (effect === 'petals') { p.vx = (Math.random() - 0.5) * 0.8; p.vy = 0.8 + Math.random() * 0.8; p.size = 6 + Math.random() * 5; }
+    if (effect === 'petals') { p.vx = (Math.random() - 0.5) * 0.8; p.vy = 0.6 + Math.random() * 0.6; p.size = 6 + Math.random() * 5; }
     else if (effect === 'rain') { p.vx = -1; p.vy = 7 + Math.random() * 4; p.size = 1; }
     else if (effect === 'snow') { p.vx = (Math.random() - 0.5) * 0.5; p.vy = 0.8 + Math.random() * 0.6; p.size = 2 + Math.random() * 2; }
     else if (effect === 'fireflies') { p.vx = (Math.random() - 0.5) * 0.3; p.vy = (Math.random() - 0.5) * 0.3; p.size = 3; p.y = Math.random() * h; }
@@ -821,7 +850,7 @@ function onMessageReceived() {
 }
 
 // ============================================
-// Settings drawer (in SillyTavern Extensions panel)
+// Settings drawer
 // ============================================
 async function loadSettingsUI() {
     try {
@@ -829,7 +858,6 @@ async function loadSettingsUI() {
         $('#extensions_settings2').append(html);
         log('Settings HTML appended');
 
-        // Add debug log + Find Icon button
         $('.hamham-settings .inline-drawer-content').append(`
             <div class="hamham-row" style="flex-direction:column;align-items:stretch;margin-top:12px;padding-top:12px;border-top:1px solid rgba(212,83,126,0.15)">
                 <button id="hamham-find-btn" class="menu_button" style="margin-bottom:8px">🔍 Find the icon (flash red)</button>
@@ -857,18 +885,17 @@ function attachDelegation() {
             getSettings().autoBond = $(this).prop('checked');
             save();
         })
-        .on('click.hamham', '#hamham-open-panel-btn', () => { log('Open panel btn'); openPanel(); })
+        .on('click.hamham', '#hamham-open-panel-btn', () => { log('Open btn (settings)'); openPanel(); })
         .on('click.hamham', '#hamham-reset-all-btn', resetAllData)
         .on('click.hamham', '#hamham-find-btn', function () {
-            if (!shadowRoot) return alert('Icon not mounted!');
+            if (!shadowRoot) return alert('UI not mounted!');
             const el = shadowRoot.getElementById('floater');
-            if (!el) return alert('Icon element missing!');
+            if (!el) return alert('Icon missing!');
             const r = el.getBoundingClientRect();
-            log(`Finder: Icon is at x=${Math.round(r.left)} y=${Math.round(r.top)} size=${Math.round(r.width)}x${Math.round(r.height)}`);
-            // Flash it red
-            const orig = el.style.cssText;
-            el.style.cssText = orig + '; background: red !important; transform: scale(2) !important; z-index: 2147483647 !important;';
-            setTimeout(() => { el.style.cssText = orig; }, 3000);
+            log(`Finder: x=${Math.round(r.left)} y=${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+            el.style.background = 'red';
+            el.style.transform = 'scale(2)';
+            setTimeout(() => { el.style.background = ''; el.style.transform = ''; }, 3000);
         });
     log('Delegation attached');
 }
