@@ -146,19 +146,56 @@ function getGenderInfo(g) {
 }
 
 async function callLLM(prompt) {
-    const ctx = getContext();
-    if (typeof ctx.generateQuietPrompt === 'function') {
-        return await ctx.generateQuietPrompt(prompt, false, false);
-    }
+    // Try SillyTavern global first (most reliable in modern ST)
+    let ctx = null;
     try {
-        const mod = await import('/script.js');
-        if (typeof mod.generateQuietPrompt === 'function') {
-            return await mod.generateQuietPrompt(prompt, false, false);
+        if (typeof window !== 'undefined' && window.SillyTavern && typeof window.SillyTavern.getContext === 'function') {
+            ctx = window.SillyTavern.getContext();
         }
-    } catch (e) {
-        log('script.js import: ' + e.message, true);
+    } catch (e) {}
+    if (!ctx) {
+        try { ctx = getContext(); } catch (e) {}
     }
-    throw new Error('No LLM function available. Is a model connected?');
+    if (!ctx) throw new Error('Could not get SillyTavern context');
+
+    const gqp = ctx.generateQuietPrompt;
+    if (typeof gqp === 'function') {
+        // Try NEW API: object form { quietPrompt }
+        try {
+            log('Trying new-style LLM API...');
+            const r = await gqp({ quietPrompt: prompt });
+            if (r !== undefined && r !== null) return r;
+            throw new Error('Empty response from new API');
+        } catch (e1) {
+            log('New API: ' + e1.message + ' - trying old...', false);
+            // Fallback to OLD API: positional (prompt, skipWIAN, quietImage)
+            try {
+                const r = await gqp(prompt, false, false);
+                if (r !== undefined && r !== null) return r;
+                throw new Error('Empty response from old API');
+            } catch (e2) {
+                // Try with just prompt
+                try {
+                    return await gqp(prompt);
+                } catch (e3) {
+                    throw new Error('generateQuietPrompt failed: ' + e2.message);
+                }
+            }
+        }
+    }
+
+    // Try generateRaw as backup
+    const gr = ctx.generateRaw;
+    if (typeof gr === 'function') {
+        try {
+            log('Fallback to generateRaw...');
+            return await gr({ prompt });
+        } catch (e) {
+            throw new Error('generateRaw failed: ' + e.message);
+        }
+    }
+
+    throw new Error('No LLM function available. Make sure a model is connected and ST is up to date.');
 }
 
 function getLorebookEntries() {
@@ -314,9 +351,9 @@ const SHADOW_CSS = `
 .foot-btn.danger { color: #E24B4A; border-color: rgba(226, 75, 74, 0.3); }
 .foot-btn:active { transform: scale(0.95); }
 
-.modal-backdrop { position: fixed; inset: 0; background: rgba(75, 21, 40, 0.5); backdrop-filter: blur(3px); z-index: 10; display: flex; align-items: center; justify-content: center; animation: modal-fade 0.18s ease; padding: 20px; pointer-events: auto; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(75, 21, 40, 0.5); backdrop-filter: blur(3px); z-index: 10; display: flex; align-items: flex-start; justify-content: center; animation: modal-fade 0.18s ease; padding: 20px 12px; pointer-events: auto; overflow-y: auto; }
 @keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
-.modal { background: #fff; border-radius: 16px; width: 100%; max-width: 380px; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(75, 21, 40, 0.4); animation: modal-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.modal { background: #fff; border-radius: 16px; width: 100%; max-width: 380px; margin: auto; box-shadow: 0 20px 60px rgba(75, 21, 40, 0.4); animation: modal-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
 @keyframes modal-pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
 .modal-head { padding: 14px 16px; background: linear-gradient(135deg, #FBEAF0, #F4C0D1); border-bottom: 1px solid rgba(212, 83, 126, 0.15); display: flex; justify-content: space-between; align-items: center; }
 .modal-title { font-size: 14px; font-weight: 700; color: #4B1528; margin: 0; }
@@ -946,7 +983,7 @@ function openNpcModal(npcId) {
 
     const root = shadowRoot.getElementById('modal-root');
     root.innerHTML =
-        '<div class="modal-backdrop" data-close="1">' +
+        '<div class="modal-backdrop">' +
             '<div class="modal">' +
                 '<div class="modal-head">' +
                     '<h3 class="modal-title">' + (isNew ? 'Add NPC' : 'Edit NPC') + '</h3>' +
@@ -1069,7 +1106,7 @@ function openLocationModal(locId) {
 
     const root = shadowRoot.getElementById('modal-root');
     root.innerHTML =
-        '<div class="modal-backdrop" data-close="1">' +
+        '<div class="modal-backdrop">' +
             '<div class="modal">' +
                 '<div class="modal-head">' +
                     '<h3 class="modal-title">' + (isNew ? 'Add Location' : 'Edit Location') + '</h3>' +
