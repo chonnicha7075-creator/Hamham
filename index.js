@@ -145,8 +145,7 @@ function getGenderInfo(g) {
     return GENDERS.find(x => x.id === g) || GENDERS[3];
 }
 
-async function callLLM(prompt) {
-    // Try SillyTavern global first (most reliable in modern ST)
+async function callLLM(prompt, systemPrompt) {
     let ctx = null;
     try {
         if (typeof window !== 'undefined' && window.SillyTavern && typeof window.SillyTavern.getContext === 'function') {
@@ -158,25 +157,35 @@ async function callLLM(prompt) {
     }
     if (!ctx) throw new Error('Could not get SillyTavern context');
 
-    const gqp = ctx.generateQuietPrompt;
-    if (typeof gqp === 'function') {
-        // Try NEW API: object form { quietPrompt }
+    const sysPrompt = systemPrompt || 'You are a data extraction assistant. Always respond with valid minified JSON only. Never use markdown code fences. Never add explanation text.';
+
+    // PRIMARY: generateRaw — no chat context, no character card, no jailbreak interference
+    // This is critical because character cards often instruct the AI to stay in roleplay / reply in Thai
+    if (typeof ctx.generateRaw === 'function') {
         try {
-            log('Trying new-style LLM API...');
-            const r = await gqp({ quietPrompt: prompt });
-            if (r !== undefined && r !== null) return r;
-            throw new Error('Empty response from new API');
+            log('Using generateRaw (no-context, clean)...');
+            const r = await ctx.generateRaw({ systemPrompt: sysPrompt, prompt: prompt });
+            if (r !== undefined && r !== null && String(r).trim() !== '') return r;
+            log('generateRaw returned empty, trying fallback');
+        } catch (e) {
+            log('generateRaw err: ' + e.message, true);
+        }
+    }
+
+    // FALLBACK: generateQuietPrompt (may inherit character context)
+    if (typeof ctx.generateQuietPrompt === 'function') {
+        try {
+            log('Fallback to generateQuietPrompt (new API)...');
+            const r = await ctx.generateQuietPrompt({ quietPrompt: prompt });
+            if (r !== undefined && r !== null && String(r).trim() !== '') return r;
         } catch (e1) {
-            log('New API: ' + e1.message + ' - trying old...', false);
-            // Fallback to OLD API: positional (prompt, skipWIAN, quietImage)
             try {
-                const r = await gqp(prompt, false, false);
-                if (r !== undefined && r !== null) return r;
-                throw new Error('Empty response from old API');
+                log('Trying old API style...');
+                const r = await ctx.generateQuietPrompt(prompt, false, false);
+                if (r !== undefined && r !== null && String(r).trim() !== '') return r;
             } catch (e2) {
-                // Try with just prompt
                 try {
-                    return await gqp(prompt);
+                    return await ctx.generateQuietPrompt(prompt);
                 } catch (e3) {
                     throw new Error('generateQuietPrompt failed: ' + e2.message);
                 }
@@ -184,18 +193,36 @@ async function callLLM(prompt) {
         }
     }
 
-    // Try generateRaw as backup
-    const gr = ctx.generateRaw;
-    if (typeof gr === 'function') {
-        try {
-            log('Fallback to generateRaw...');
-            return await gr({ prompt });
-        } catch (e) {
-            throw new Error('generateRaw failed: ' + e.message);
+    throw new Error('No LLM function available. Please update SillyTavern to the latest version.');
+}
+
+function stripReasoning(text) {
+    // Strip <think>, <thinking>, <reasoning> blocks commonly used by Gemini 2.5, DeepSeek R1, Claude thinking, etc.
+    return String(text || '')
+        .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '')
+        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+        .replace(/```json\s*|\s*```/g, '')
+        .trim();
+}
+
+function extractJSON(text) {
+    const cleaned = stripReasoning(text);
+    // Try to find object first, then array
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+        try { return JSON.parse(objMatch[0]); } catch (e) {
+            // Try to clean common issues: trailing commas, single quotes
+            const fixed = objMatch[0]
+                .replace(/,(\s*[}\]])/g, '$1')
+                .replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3')
+                .replace(/:\s*'([^']*)'/g, ': "$1"');
+            try { return JSON.parse(fixed); } catch (e2) {
+                log('JSON repair failed: ' + e2.message + '\nRaw: ' + objMatch[0].slice(0, 300), true);
+                throw new Error('Invalid JSON in response: ' + e2.message);
+            }
         }
     }
-
-    throw new Error('No LLM function available. Make sure a model is connected and ST is up to date.');
+    throw new Error('No JSON object found. LLM said: "' + cleaned.slice(0, 150) + '..."');
 }
 
 function getLorebookEntries() {
@@ -351,14 +378,16 @@ const SHADOW_CSS = `
 .foot-btn.danger { color: #E24B4A; border-color: rgba(226, 75, 74, 0.3); }
 .foot-btn:active { transform: scale(0.95); }
 
-.modal-backdrop { position: fixed; inset: 0; background: rgba(75, 21, 40, 0.5); backdrop-filter: blur(3px); z-index: 10; display: flex; align-items: flex-start; justify-content: center; animation: modal-fade 0.18s ease; padding: 20px 12px; pointer-events: auto; overflow-y: auto; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(75, 21, 40, 0.5); backdrop-filter: blur(3px); z-index: 10; display: flex; align-items: center; justify-content: center; animation: modal-fade 0.18s ease; padding: 12px; pointer-events: auto; }
 @keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
-.modal { background: #fff; border-radius: 16px; width: 100%; max-width: 380px; margin: auto; box-shadow: 0 20px 60px rgba(75, 21, 40, 0.4); animation: modal-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.modal { background: #fff; border-radius: 16px; width: 100%; max-width: 380px; max-height: calc(100vh - 24px); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(75, 21, 40, 0.4); animation: modal-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
 @keyframes modal-pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
-.modal-head { padding: 14px 16px; background: linear-gradient(135deg, #FBEAF0, #F4C0D1); border-bottom: 1px solid rgba(212, 83, 126, 0.15); display: flex; justify-content: space-between; align-items: center; }
+.modal-head { padding: 14px 16px; background: linear-gradient(135deg, #FBEAF0, #F4C0D1); border-bottom: 1px solid rgba(212, 83, 126, 0.15); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
 .modal-title { font-size: 14px; font-weight: 700; color: #4B1528; margin: 0; }
-.modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-.modal-foot { padding: 10px 16px; border-top: 1px solid rgba(212, 83, 126, 0.1); display: flex; gap: 6px; justify-content: flex-end; background: #fff9fb; }
+.modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-thumb { background: #F4C0D1; border-radius: 3px; }
+.modal-foot { padding: 10px 16px; border-top: 1px solid rgba(212, 83, 126, 0.1); display: flex; gap: 6px; justify-content: flex-end; background: #fff9fb; flex-shrink: 0; flex-wrap: wrap; }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field-label { font-size: 10px; font-weight: 600; color: #993556; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -415,41 +444,66 @@ async function autoExtract() {
 
         const loreText = lore.length ? lore.map(e => '[' + e.key + ']: ' + e.content).join('\n').slice(0, 3000) : '';
 
-        const prompt = 'Extract world data from this roleplay. Return ONLY valid minified JSON, no preamble, no code fence.\n\n' +
-            'User: ' + userName + '\n' +
-            'Main character: ' + charName + '\n' +
-            'Already tracked NPCs: ' + existingNpcs + '\n' +
-            'Already tracked locations: ' + existingLocs + '\n\n' +
-            'Output format (STRICT):\n' +
-            '{"npcs":[{"name":"","gender":"female|male|other|unknown","relationship":"romance|ally|friend|family|rival|enemy|neutral","role":"specific kinship role","description":"1-2 sentences"}],"locations":[{"name":"","description":"1-2 sentences"}]}\n\n' +
-            'Rules:\n' +
-            '- "relationship" = how this NPC relates to ' + userName + ' (the user)\n' +
-            '- "role" = specific role: mother, father, lover, mentor, servant, etc. (in source language)\n' +
-            '- Names in any language (Thai, English, Chinese) are fine\n' +
-            '- Skip already-tracked entries\n' +
-            '- Skip user (' + userName + ') and main character (' + charName + ')\n' +
-            '- Only proper names\n' +
-            '- Description in the SAME LANGUAGE as source text\n' +
-            '- If nothing new, return {"npcs":[],"locations":[]}\n\n' +
+        const sysPrompt = 'You are a JSON extraction tool. You read fiction text and output structured JSON data about characters and places. You MUST output only valid JSON - no narrative, no roleplay, no markdown fences, no prose explanation. Start your response with "{" and end with "}". Nothing else.';
+
+        const prompt =
+            'TASK: Extract NPCs (other named characters), locations, and relationships from the text below.\n\n' +
+            'CONTEXT:\n' +
+            '- User (the player): ' + userName + '\n' +
+            '- Main character (the bot): ' + charName + '\n' +
+            '- Already tracked NPCs: ' + existingNpcs + '\n' +
+            '- Already tracked locations: ' + existingLocs + '\n\n' +
+            'OUTPUT SCHEMA (STRICT - output exactly this structure):\n' +
+            '{\n' +
+            '  "npcs": [\n' +
+            '    {\n' +
+            '      "name": "character name",\n' +
+            '      "gender": "female" | "male" | "other" | "unknown",\n' +
+            '      "relationship": "romance" | "ally" | "friend" | "family" | "rival" | "enemy" | "neutral",\n' +
+            '      "role": "specific role like mother/lover/mentor in source language",\n' +
+            '      "description": "1-2 sentence description in source language",\n' +
+            '      "known_others": [\n' +
+            '        {"name": "other NPC name", "role": "how they relate e.g. brother/enemy/friend"}\n' +
+            '      ]\n' +
+            '    }\n' +
+            '  ],\n' +
+            '  "locations": [\n' +
+            '    {"name": "place name", "description": "1-2 sentences in source language"}\n' +
+            '  ]\n' +
+            '}\n\n' +
+            'RULES:\n' +
+            '1. "relationship" = how THIS NPC relates to ' + userName + ' (the user)\n' +
+            '2. "known_others" = list of OTHER NPCs this character has any relationship with (family, rival, etc.)\n' +
+            '3. Names must match exactly between npcs and known_others entries so we can link them\n' +
+            '4. Skip NPCs/locations already tracked\n' +
+            '5. Do not include ' + userName + ' or ' + charName + ' as NPCs\n' +
+            '6. Only include NAMED characters (not "the guard", "a merchant")\n' +
+            '7. Use the SAME LANGUAGE as the source text for descriptions and roles\n' +
+            '8. Output empty arrays if nothing new: {"npcs":[],"locations":[]}\n' +
+            '9. Return ONLY the JSON object. No greetings, no explanations, no narrative.\n\n' +
             (loreText ? '=== LOREBOOK ===\n' + loreText + '\n\n' : '') +
-            '=== RECENT CHAT ===\n' + chatText + '\n\nJSON:';
+            '=== RECENT CHAT ===\n' + chatText + '\n\n' +
+            'Now output the JSON:';
 
-        log('Extracting... (prompt ' + prompt.length + ' chars, lore: ' + lore.length + ')');
-        const response = await callLLM(prompt);
-        log('Got ' + (response || '').length + ' chars');
-
-        const cleaned = String(response || '').replace(/```json\s*|\s*```/g, '').trim();
-        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('No JSON in LLM response');
+        log('Extracting... (prompt ' + prompt.length + ' chars, lore entries: ' + lore.length + ')');
+        const response = await callLLM(prompt, sysPrompt);
+        const respStr = String(response || '');
+        log('Got ' + respStr.length + ' chars');
+        // Log a preview of the response for debugging
+        console.log('[Hamham] Raw LLM response:', respStr.slice(0, 500));
 
         let parsed;
-        try { parsed = JSON.parse(jsonMatch[0]); }
-        catch (e) {
-            log('JSON parse failed: ' + jsonMatch[0].slice(0, 200), true);
-            throw new Error('Could not parse LLM response as JSON');
+        try {
+            parsed = extractJSON(respStr);
+        } catch (parseErr) {
+            // Save full response to console for debug
+            console.error('[Hamham] Full LLM response:', respStr);
+            throw parseErr;
         }
 
-        let addedNpcs = 0, addedLocs = 0, skipped = 0;
+        let addedNpcs = 0, addedLocs = 0, skipped = 0, linked = 0;
+        const newlyAdded = []; // Track for second pass (relations)
+
         for (const npc of (parsed.npcs || [])) {
             if (!npc || !npc.name || typeof npc.name !== 'string') { skipped++; continue; }
             const name = npc.name.trim().slice(0, 40);
@@ -457,14 +511,18 @@ async function autoExtract() {
             if (data.npcs.find(n => n.name.toLowerCase() === name.toLowerCase())) { skipped++; continue; }
             const rel = VALID_RELATIONSHIPS.includes(npc.relationship) ? npc.relationship : 'neutral';
             const gender = ['female','male','other','unknown'].includes(npc.gender) ? npc.gender : 'unknown';
-            data.npcs.push({
+            const newNpc = {
                 id: uid('npc'), name, gender, relationship: rel,
                 role: (npc.role || '').slice(0, 30),
                 description: (npc.description || '').slice(0, 500),
-                bondLevel: 0, mentions: 0, relations: []
-            });
+                bondLevel: 0, mentions: 0, relations: [],
+                _pendingKnownOthers: Array.isArray(npc.known_others) ? npc.known_others : []
+            };
+            data.npcs.push(newNpc);
+            newlyAdded.push(newNpc);
             addedNpcs++;
         }
+
         for (const loc of (parsed.locations || [])) {
             if (!loc || !loc.name || typeof loc.name !== 'string') { skipped++; continue; }
             const name = loc.name.trim().slice(0, 40);
@@ -477,12 +535,39 @@ async function autoExtract() {
             addedLocs++;
         }
 
+        // SECOND PASS: resolve known_others → actual relations with targetIds
+        // Also do this for existing NPCs in case LLM mentions new links between old NPCs
+        for (const npc of newlyAdded) {
+            for (const ko of (npc._pendingKnownOthers || [])) {
+                if (!ko || !ko.name || !ko.role) continue;
+                const targetName = String(ko.name).trim().toLowerCase();
+                if (!targetName) continue;
+                const target = data.npcs.find(n => n.id !== npc.id && n.name.toLowerCase() === targetName);
+                if (!target) continue;
+                const role = String(ko.role).trim().slice(0, 30);
+                if (!role) continue;
+                // Avoid duplicates
+                if (!npc.relations.find(r => r.targetId === target.id)) {
+                    npc.relations.push({ targetId: target.id, role });
+                    linked++;
+                }
+                // Also add reverse link if it doesn't exist (mirrored)
+                if (!target.relations.find(r => r.targetId === npc.id)) {
+                    target.relations.push({ targetId: npc.id, role });
+                }
+            }
+            delete npc._pendingKnownOthers;
+        }
+
         save(); refreshPanel();
-        log('Extract: +' + addedNpcs + ' NPCs, +' + addedLocs + ' locs');
-        alert('\u273F Added ' + addedNpcs + ' NPC' + (addedNpcs !== 1 ? 's' : '') + ' and ' + addedLocs + ' location' + (addedLocs !== 1 ? 's' : '') + (skipped > 0 ? '\n(' + skipped + ' skipped)' : ''));
+        log('Extract: +' + addedNpcs + ' NPCs, +' + addedLocs + ' locs, +' + linked + ' links');
+        alert('\u273F Added ' + addedNpcs + ' NPC' + (addedNpcs !== 1 ? 's' : '') +
+            ', ' + addedLocs + ' location' + (addedLocs !== 1 ? 's' : '') +
+            ', ' + linked + ' relationship link' + (linked !== 1 ? 's' : '') +
+            (skipped > 0 ? '\n(' + skipped + ' skipped or duplicate)' : ''));
     } catch (e) {
         log('Extract: ' + e.message, true);
-        alert('Extract failed: ' + e.message + '\n\nMake sure a model is connected.');
+        alert('Extract failed: ' + e.message + '\n\nCheck browser console (F12) for the raw LLM response.');
     } finally {
         if (btn) { btn.textContent = origText; btn.style.pointerEvents = ''; btn.style.opacity = ''; }
     }
@@ -501,22 +586,24 @@ async function autoMood(silent) {
         if (recent.length === 0) { if (!silent) alert('No messages yet.'); return; }
         const text = recent.map(m => (m.mes || '').replace(/\n+/g, ' ')).join('\n').slice(0, 2000);
 
-        const prompt = 'Read this roleplay and pick the best atmosphere effect. Return ONLY one word, nothing else.\n\n' +
-            'Effects:\n' +
+        const sysPrompt = 'You are a mood classifier. You analyze text and respond with exactly one lowercase word from a given list. Never add explanation.';
+
+        const prompt = 'Read the text and output ONE word naming the best atmosphere effect. Output only the word, nothing else.\n\n' +
+            'Effects available:\n' +
             '- petals = soft romantic, spring, tender moments, gardens, flowers\n' +
             '- lanterns = Chinese ancient, festival, palace, warm celebration, imperial\n' +
             '- snow = cold, melancholy, winter, quiet, loss\n' +
             '- fireflies = magical, evening, intimate, forest, summer night\n' +
             '- stars = night sky, cosmic, hopeful, vast, wonder\n' +
             '- rain = sorrow, reflection, storm, tension\n' +
-            '- dust = warm afternoon, nostalgia, library, old places\n' +
+            '- leaves = autumn, nostalgia, warm afternoon, falling leaves, aging\n' +
             '- none = action, combat, bright day, urgent, chaotic\n\n' +
             'Text:\n' + text + '\n\n' +
-            'Answer with ONE word: petals, lanterns, snow, fireflies, stars, rain, dust, or none';
+            'Your answer (ONE word only): petals, lanterns, snow, fireflies, stars, rain, leaves, or none';
 
-        const response = await callLLM(prompt);
-        const effect = String(response || '').toLowerCase().match(/petals|lanterns|snow|fireflies|stars|rain|dust|none/);
-        if (!effect) throw new Error('Could not parse mood');
+        const response = await callLLM(prompt, sysPrompt);
+        const effect = String(response || '').toLowerCase().match(/petals|lanterns|snow|fireflies|stars|rain|leaves|none/);
+        if (!effect) throw new Error('Could not parse mood from: "' + String(response || '').slice(0, 100) + '"');
 
         getSettings().atmosphere.effect = effect[0];
         save(); restartAtmosphere(); renderTab('atmosphere');
@@ -912,7 +999,7 @@ function renderAtmosphere(c) {
         { id: 'fireflies', name: '\u2728 Fireflies',      desc: 'Magical' },
         { id: 'stars',     name: '\u2B50 Stars',          desc: 'Night' },
         { id: 'rain',      name: '\uD83C\uDF27\uFE0F Rain', desc: 'Sorrow' },
-        { id: 'dust',      name: 'Dust',                  desc: 'Warm haze' }
+        { id: 'leaves',    name: '\uD83C\uDF42 Leaves',   desc: 'Autumn' }
     ];
     const autoOn = !!s.autoMood;
     c.innerHTML =
@@ -1239,10 +1326,11 @@ function newParticle(effect) {
         }
     }
     else if (effect === 'snow') {
-        p.vx = (Math.random() - 0.5) * 0.3;
-        p.vy = 0.4 + Math.random() * 0.3;
-        p.size = 2 + Math.random() * 2;
-        p.opacity = 0.35 + Math.random() * 0.3;
+        p.vx = (Math.random() - 0.5) * 0.35;
+        p.vy = 0.35 + Math.random() * 0.3;
+        p.size = 4 + Math.random() * 3;
+        p.opacity = 0.45 + Math.random() * 0.3;
+        p.vr = (Math.random() - 0.5) * 0.008;
     }
     else if (effect === 'fireflies') {
         p.vx = (Math.random() - 0.5) * 0.2;
@@ -1261,12 +1349,12 @@ function newParticle(effect) {
         p.size = 1;
         p.opacity = 0.3 + Math.random() * 0.25;
     }
-    else if (effect === 'dust') {
-        p.vx = (Math.random() - 0.5) * 0.2;
-        p.vy = -0.15 + Math.random() * 0.3;
-        p.size = 1.2 + Math.random() * 0.8;
-        p.y = Math.random() * h;
-        p.opacity = 0.2 + Math.random() * 0.2;
+    else if (effect === 'leaves') {
+        p.vy = 0.3 + Math.random() * 0.4;
+        p.vx = (Math.random() - 0.5) * 0.5;
+        p.size = 6 + Math.random() * 5;
+        p.opacity = 0.35 + Math.random() * 0.3;
+        p.vr = (Math.random() - 0.5) * 0.04;
     }
     return p;
 }
@@ -1301,6 +1389,10 @@ function updateParticle(p, effect) {
     } else if (effect === 'stars') {
         p.y += p.vy;
         p.opacity = 0.15 + Math.abs(Math.sin(Date.now() / 1200 + p.hue * 6)) * 0.45;
+    } else if (effect === 'leaves') {
+        // Leaves sway wider and tumble more
+        p.x += p.vx + Math.sin(p.sway) * 0.6;
+        p.y += p.vy + Math.sin(p.sway * 0.5) * 0.15;
     } else {
         p.x += p.vx;
         p.y += p.vy;
@@ -1402,20 +1494,119 @@ function drawSparkle(c, p) {
 
 function drawSnow(c, p) {
     c.save();
+    c.translate(p.x, p.y);
+    c.rotate(p.rot);
     c.globalAlpha = p.opacity;
-    c.shadowColor = '#E0F0FF'; c.shadowBlur = p.size * 2;
-    c.fillStyle = '#ffffff';
-    c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
-    c.shadowBlur = 0;
-    c.strokeStyle = 'rgba(255, 255, 255, ' + (p.opacity * 0.5) + ')';
-    c.lineWidth = 0.4;
-    c.beginPath();
-    for (let i = 0; i < 3; i++) {
-        const a = (i * Math.PI) / 3;
-        c.moveTo(p.x - Math.cos(a) * p.size * 1.4, p.y - Math.sin(a) * p.size * 1.4);
-        c.lineTo(p.x + Math.cos(a) * p.size * 1.4, p.y + Math.sin(a) * p.size * 1.4);
+    c.shadowColor = '#E0F0FF';
+    c.shadowBlur = p.size * 1.5;
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 0.9;
+    c.lineCap = 'round';
+
+    // 6 main arms
+    for (let i = 0; i < 6; i++) {
+        c.save();
+        c.rotate((i * Math.PI) / 3);
+        c.beginPath();
+        c.moveTo(0, 0);
+        c.lineTo(0, -p.size * 1.6);
+        c.stroke();
+        // Two V-shaped side branches near the tip
+        c.beginPath();
+        c.moveTo(0, -p.size * 1.0);
+        c.lineTo(-p.size * 0.35, -p.size * 1.35);
+        c.moveTo(0, -p.size * 1.0);
+        c.lineTo(p.size * 0.35, -p.size * 1.35);
+        c.stroke();
+        // Smaller branches midway
+        c.beginPath();
+        c.moveTo(0, -p.size * 0.55);
+        c.lineTo(-p.size * 0.22, -p.size * 0.78);
+        c.moveTo(0, -p.size * 0.55);
+        c.lineTo(p.size * 0.22, -p.size * 0.78);
+        c.stroke();
+        c.restore();
     }
+
+    // Small center hexagon
+    c.shadowBlur = 0;
+    c.fillStyle = '#ffffff';
+    c.beginPath();
+    c.arc(0, 0, p.size * 0.22, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+}
+
+function drawLeaf(c, p) {
+    c.save();
+    c.translate(p.x, p.y);
+    c.rotate(p.rot);
+
+    // Autumn palette: orange, red, yellow, amber
+    const palette = [
+        ['#FF9A3C', '#C9511A'], // bright orange
+        ['#FFD166', '#C89A2A'], // gold yellow
+        ['#E85A3A', '#8E1E18'], // red
+        ['#F4A261', '#C67E3C'], // amber
+        ['#FFB347', '#D87A27']  // pumpkin
+    ];
+    const pal = palette[Math.floor(p.hue * palette.length)];
+    const light = pal[0], dark = pal[1];
+
+    c.globalAlpha = p.opacity;
+    c.shadowColor = dark;
+    c.shadowBlur = p.size * 0.5;
+
+    // Leaf body — pointed oval shape
+    c.fillStyle = light;
+    c.beginPath();
+    c.moveTo(0, -p.size);
+    c.bezierCurveTo(p.size * 0.7, -p.size * 0.5, p.size * 0.7, p.size * 0.5, 0, p.size);
+    c.bezierCurveTo(-p.size * 0.7, p.size * 0.5, -p.size * 0.7, -p.size * 0.5, 0, -p.size);
+    c.fill();
+
+    // Darker shade on one half for depth
+    c.shadowBlur = 0;
+    c.fillStyle = dark;
+    c.globalAlpha = p.opacity * 0.4;
+    c.beginPath();
+    c.moveTo(0, -p.size);
+    c.bezierCurveTo(p.size * 0.7, -p.size * 0.5, p.size * 0.7, p.size * 0.5, 0, p.size);
+    c.lineTo(0, -p.size);
+    c.fill();
+
+    // Center vein
+    c.globalAlpha = p.opacity * 0.8;
+    c.strokeStyle = dark;
+    c.lineWidth = 0.6;
+    c.beginPath();
+    c.moveTo(0, -p.size);
+    c.lineTo(0, p.size);
     c.stroke();
+
+    // Side veins
+    c.lineWidth = 0.35;
+    for (let i = -2; i <= 2; i++) {
+        if (i === 0) continue;
+        const y = i * p.size * 0.3;
+        const len = p.size * (1 - Math.abs(i) * 0.2) * 0.55;
+        c.beginPath();
+        c.moveTo(0, y);
+        c.lineTo(len, y + p.size * 0.12);
+        c.moveTo(0, y);
+        c.lineTo(-len, y + p.size * 0.12);
+        c.stroke();
+    }
+
+    // Little stem at top
+    c.globalAlpha = p.opacity * 0.9;
+    c.strokeStyle = dark;
+    c.lineWidth = 0.8;
+    c.beginPath();
+    c.moveTo(0, -p.size);
+    c.lineTo(0, -p.size - p.size * 0.25);
+    c.stroke();
+
     c.restore();
 }
 
@@ -1461,15 +1652,6 @@ function drawRain(c, p) {
     c.restore();
 }
 
-function drawDust(c, p) {
-    c.save();
-    c.globalAlpha = p.opacity;
-    c.fillStyle = '#F4C0D1';
-    c.shadowColor = '#FFE5EE'; c.shadowBlur = p.size * 2;
-    c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
-    c.restore();
-}
-
 function drawParticle(p, effect) {
     const c = atmosCtx;
     if (effect === 'petals') { drawSakura(c, p); return; }
@@ -1483,7 +1665,7 @@ function drawParticle(p, effect) {
     if (effect === 'fireflies') { drawFirefly(c, p); return; }
     if (effect === 'stars') { drawStar(c, p); return; }
     if (effect === 'rain') { drawRain(c, p); return; }
-    if (effect === 'dust') { drawDust(c, p); return; }
+    if (effect === 'leaves') { drawLeaf(c, p); return; }
 }
 
 function promptAddMemory() {
