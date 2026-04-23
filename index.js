@@ -1,14 +1,15 @@
 /* ============================================
-   HAMHAM v1.0.3
-   Fix: tap on icon · center panel · petals default
+   HAMHAM v1.0.4
+   + Auto-extract from chat (uses bot's LLM)
+   + Softer 5-petal sakura + Chinese lanterns
    ============================================ */
 
 import { extension_settings, getContext } from "../../../extensions.js";
-import { saveSettingsDebounced, eventSource, event_types } from "../../../../script.js";
+import { saveSettingsDebounced, eventSource, event_types, generateQuietPrompt } from "../../../../script.js";
 
 const extensionName = "Hamham";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
-const VERSION = "1.0.3";
+const VERSION = "1.0.4";
 
 const DEFAULT_SETTINGS = {
     iconVisible: true,
@@ -29,7 +30,8 @@ const RELATIONSHIP_TYPES = {
     neutral: { label: 'Neutral', color: '#888780', bg: '#F1EFE8' }
 };
 
-// Bigger, clearer hamster — explicit sizes not percentages
+const VALID_RELATIONSHIPS = Object.keys(RELATIONSHIP_TYPES);
+
 const HAMSTER_SVG = `<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
 <circle cx="12" cy="13" r="4.5" fill="#ED93B1"/>
 <circle cx="28" cy="13" r="4.5" fill="#ED93B1"/>
@@ -46,24 +48,8 @@ const HAMSTER_SVG = `<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http
 <path d="M 18 25 Q 20 27 22 25" stroke="#4B1528" stroke-width="0.8" fill="none" stroke-linecap="round"/>
 </svg>`;
 
-const HAMSTER_SVG_BIG = `<svg width="56" height="56" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-<circle cx="12" cy="13" r="4.5" fill="#ED93B1"/>
-<circle cx="28" cy="13" r="4.5" fill="#ED93B1"/>
-<circle cx="12" cy="13" r="2.2" fill="#F4C0D1"/>
-<circle cx="28" cy="13" r="2.2" fill="#F4C0D1"/>
-<circle cx="20" cy="22" r="13" fill="#F4C0D1"/>
-<circle cx="13.5" cy="24.5" r="2.8" fill="#ED93B1" opacity="0.7"/>
-<circle cx="26.5" cy="24.5" r="2.8" fill="#ED93B1" opacity="0.7"/>
-<circle cx="16" cy="21" r="1.6" fill="#4B1528"/>
-<circle cx="24" cy="21" r="1.6" fill="#4B1528"/>
-<circle cx="16.6" cy="20.4" r="0.5" fill="#fff"/>
-<circle cx="24.6" cy="20.4" r="0.5" fill="#fff"/>
-<ellipse cx="20" cy="24.5" rx="1.3" ry="0.9" fill="#4B1528"/>
-<path d="M 18 25 Q 20 27 22 25" stroke="#4B1528" stroke-width="0.8" fill="none" stroke-linecap="round"/>
-</svg>`;
-
 // ============================================
-// Debug logging
+// Logging
 // ============================================
 const debugLog = [];
 function log(msg, isError = false) {
@@ -145,6 +131,112 @@ function escapeHtml(s) {
 }
 
 // ============================================
+// Auto-extract via LLM (uses bot's current API)
+// ============================================
+async function autoExtract() {
+    const data = getCharData();
+    if (!data) return alert('Please select a character first');
+
+    const btn = shadowRoot?.querySelector('[data-action="auto-extract"]');
+    const origText = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = '⏳ Extracting...'; btn.style.pointerEvents = 'none'; btn.style.opacity = '0.6'; }
+
+    try {
+        const ctx = getContext();
+        const recent = (ctx.chat || []).slice(-10);
+        if (recent.length === 0) {
+            alert('No chat messages yet.');
+            return;
+        }
+
+        const existingNpcs = data.npcs.map(n => n.name).join(', ') || 'none';
+        const existingLocs = data.locations.map(l => l.name).join(', ') || 'none';
+
+        const chatText = recent.map(m => {
+            const speaker = m.is_user ? 'USER' : (m.name || 'CHAR');
+            const text = (m.mes || '').replace(/\n+/g, ' ').slice(0, 800);
+            return `[${speaker}]: ${text}`;
+        }).join('\n\n');
+
+        const prompt = `You are analyzing a roleplay excerpt to extract world data. Return ONLY valid minified JSON, nothing else - no preamble, no code fence, no explanation.
+
+Task: Extract NPCs (named characters other than the user) and locations mentioned in the text below. Skip anyone already tracked.
+
+Already tracked NPCs: ${existingNpcs}
+Already tracked locations: ${existingLocs}
+
+Output format (STRICT):
+{"npcs":[{"name":"Name","relationship":"ally"}],"locations":[{"name":"Place name"}]}
+
+Valid relationships: romance, ally, friend, rival, enemy, neutral
+- romance: lovers, crushes, spouses
+- ally: trusted companions, teammates
+- friend: close friends
+- rival: competitors, frenemies
+- enemy: hostile, antagonists
+- neutral: unclear or minor characters
+
+Rules:
+- Only include characters with proper names (no "the man", "a soldier")
+- Only real locations (no abstract concepts)
+- Skip the user character
+- Keep names short (max 30 chars)
+- Names can be in any language (Thai, English, Chinese, etc.)
+- If nothing new to add, return {"npcs":[],"locations":[]}
+
+Text to analyze:
+${chatText}
+
+JSON:`;
+
+        log('Sending extract prompt (' + prompt.length + ' chars)...');
+        const response = await generateQuietPrompt(prompt, false, false);
+        log('Got response (' + (response || '').length + ' chars)');
+
+        // Extract JSON from response
+        const cleaned = String(response || '').replace(/```json\s*|\s*```/g, '').trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON found in LLM response');
+
+        let parsed;
+        try { parsed = JSON.parse(jsonMatch[0]); }
+        catch (e) {
+            log('JSON parse failed, raw: ' + jsonMatch[0].slice(0, 200), true);
+            throw new Error('Could not parse LLM response as JSON');
+        }
+
+        let addedNpcs = 0, addedLocs = 0, skipped = 0;
+        for (const npc of (parsed.npcs || [])) {
+            if (!npc?.name || typeof npc.name !== 'string') { skipped++; continue; }
+            const name = npc.name.trim().slice(0, 40);
+            if (!name) { skipped++; continue; }
+            if (data.npcs.find(n => n.name.toLowerCase() === name.toLowerCase())) { skipped++; continue; }
+            const rel = VALID_RELATIONSHIPS.includes(npc.relationship) ? npc.relationship : 'neutral';
+            data.npcs.push({ name, relationship: rel, bondLevel: 0, mentions: 0 });
+            addedNpcs++;
+        }
+        for (const loc of (parsed.locations || [])) {
+            if (!loc?.name || typeof loc.name !== 'string') { skipped++; continue; }
+            const name = loc.name.trim().slice(0, 40);
+            if (!name) { skipped++; continue; }
+            if (data.locations.find(l => l.name.toLowerCase() === name.toLowerCase())) { skipped++; continue; }
+            data.locations.push({ name, x: 20 + Math.random() * 60, y: 20 + Math.random() * 60 });
+            addedLocs++;
+        }
+
+        save();
+        refreshPanel();
+        log(`Extract: +${addedNpcs} NPCs, +${addedLocs} locations`);
+        alert(`✿ Added ${addedNpcs} NPC${addedNpcs !== 1 ? 's' : ''} and ${addedLocs} location${addedLocs !== 1 ? 's' : ''}${skipped > 0 ? ` (${skipped} skipped/duplicate)` : ''}`);
+    } catch (e) {
+        log('Auto-extract failed: ' + e.message, true);
+        alert('Extract failed: ' + e.message);
+    } finally {
+        if (btn) { btn.textContent = origText; btn.style.pointerEvents = ''; btn.style.opacity = ''; }
+    }
+}
+
+// ============================================
 // Shadow DOM mount
 // ============================================
 let shadowHost = null;
@@ -160,7 +252,7 @@ function buildShadowHost() {
 
     document.documentElement.appendChild(shadowHost);
     shadowRoot = shadowHost.attachShadow({ mode: 'open' });
-    log('Shadow host mounted (100vw x 100vh, pointer-events: none)');
+    log('Shadow host mounted');
     return shadowRoot;
 }
 
@@ -168,7 +260,6 @@ const SHADOW_CSS = `
 :host { all: initial; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Thai', sans-serif; }
 * { box-sizing: border-box; }
 
-/* Floating icon — pointer-events: auto is CRITICAL */
 .floater {
     position: fixed;
     right: 16px;
@@ -202,7 +293,6 @@ const SHADOW_CSS = `
     50% { transform: translateY(-4px); }
 }
 
-/* Panel — centered on mobile, corner on desktop */
 .panel {
     position: fixed;
     pointer-events: auto;
@@ -214,8 +304,6 @@ const SHADOW_CSS = `
     overflow: hidden;
     color: #3d2030;
     animation: ham-slide 0.25s ease-out;
-
-    /* Mobile-first — centered, large */
     top: 5vh;
     left: 50%;
     transform: translateX(-50%);
@@ -228,16 +316,7 @@ const SHADOW_CSS = `
     to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
-/* Header */
-.header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px;
-    background: linear-gradient(135deg, #FBEAF0, #F4C0D1);
-    border-bottom: 1px solid rgba(212, 83, 126, 0.15);
-    flex-shrink: 0;
-}
+.header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(135deg, #FBEAF0, #F4C0D1); border-bottom: 1px solid rgba(212, 83, 126, 0.15); flex-shrink: 0; }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-logo { width: 32px; height: 32px; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(212, 83, 126, 0.25); overflow: hidden; }
 .brand-logo svg { width: 32px; height: 32px; }
@@ -248,25 +327,26 @@ const SHADOW_CSS = `
 .close-btn { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.6); color: #72243E; font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; pointer-events: auto; }
 .close-btn:active { background: #fff; transform: scale(0.9); }
 
-/* Stats */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 10px 14px; background: #fff9fb; flex-shrink: 0; }
 .stat { background: #fff; padding: 8px 6px; border-radius: 8px; border: 1px solid rgba(212, 83, 126, 0.1); text-align: center; }
 .stat-label { font-size: 9px; color: #8b6676; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
 .stat-value { font-size: 18px; font-weight: 700; color: #4B1528; margin-top: 2px; }
 
-/* Tabs */
 .tabs { display: flex; padding: 0 14px; background: #fff9fb; border-bottom: 1px solid rgba(212, 83, 126, 0.1); overflow-x: auto; flex-shrink: 0; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab { padding: 10px 12px; font-size: 12px; color: #8b6676; cursor: pointer; border: none; background: none; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
 .tab.active { color: #D4537E; border-bottom-color: #D4537E; }
 
-/* Content */
 .content { flex: 1; overflow-y: auto; padding: 12px 14px; -webkit-overflow-scrolling: touch; }
 .content::-webkit-scrollbar { width: 6px; }
 .content::-webkit-scrollbar-thumb { background: #F4C0D1; border-radius: 3px; }
 
 .empty { padding: 20px; text-align: center; color: #8b6676; font-size: 12px; background: #fff9fb; border-radius: 10px; line-height: 1.6; }
 .empty b { display: block; color: #D4537E; margin-bottom: 6px; font-size: 13px; }
+
+.extract-btn { width: 100%; padding: 12px; margin: 10px 0 14px; background: linear-gradient(135deg, #D4537E 0%, #993556 100%); color: #fff; border: none; border-radius: 12px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(212, 83, 126, 0.3); -webkit-tap-highlight-color: transparent; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.extract-btn:active { transform: scale(0.98); }
+.extract-hint { font-size: 10.5px; color: #8b6676; text-align: center; margin-top: -8px; margin-bottom: 12px; }
 
 .section { margin-top: 14px; }
 .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -282,19 +362,16 @@ const SHADOW_CSS = `
 .del-btn { width: 26px; height: 26px; border-radius: 6px; border: none; background: transparent; color: #8b6676; cursor: pointer; font-size: 13px; flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
 .del-btn:active { background: #FCEBEB; color: #E24B4A; }
 
-/* Map */
 .map-wrap { position: relative; width: 100%; aspect-ratio: 5/3; background: #FBEAF0; border-radius: 12px; overflow: hidden; border: 1px solid rgba(212, 83, 126, 0.15); }
 .map-wrap svg { width: 100%; height: 100%; display: block; }
 .pin { position: absolute; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transform: translate(-50%, -50%); }
 
-/* Constellation */
 .const-wrap { background: #FBEAF0; border-radius: 12px; border: 1px solid rgba(212, 83, 126, 0.15); overflow: hidden; }
 .const-wrap svg { width: 100%; display: block; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: #fff9fb; font-size: 10px; color: #8b6676; }
 .legend span { display: flex; align-items: center; gap: 4px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
-/* Memory */
 .mem-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
 .mem-card { background: #fff; border-radius: 10px; border: 1px solid rgba(212, 83, 126, 0.1); overflow: hidden; position: relative; }
 .mem-banner { padding: 6px 10px; font-size: 10px; font-weight: 600; }
@@ -308,7 +385,6 @@ const SHADOW_CSS = `
 .mem-card.emo-mystery .mem-banner { background: #EEEDFE; color: #26215C; }
 .mem-del { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.9); border: none; cursor: pointer; font-size: 10px; color: #8b6676; -webkit-tap-highlight-color: transparent; }
 
-/* Atmosphere */
 .atmos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
 .atmos-card { background: #fff; border: 2px solid rgba(212, 83, 126, 0.1); border-radius: 10px; padding: 12px 8px; cursor: pointer; text-align: center; -webkit-tap-highlight-color: transparent; }
 .atmos-card.active { border-color: #D4537E; background: #FBEAF0; }
@@ -322,7 +398,6 @@ const SHADOW_CSS = `
 .seg-btn { font-size: 10px; padding: 6px 11px; border: 1px solid rgba(212, 83, 126, 0.15); background: #fff; border-radius: 6px; cursor: pointer; color: #8b6676; -webkit-tap-highlight-color: transparent; }
 .seg-btn.active { background: #D4537E; color: #fff; border-color: #D4537E; }
 
-/* Footer */
 .footer { display: flex; justify-content: space-between; padding: 10px 14px; background: #fff9fb; border-top: 1px solid rgba(212, 83, 126, 0.1); gap: 6px; flex-shrink: 0; }
 .foot-btns { display: flex; gap: 4px; }
 .foot-btn { font-size: 11px; padding: 6px 11px; background: #fff; border: 1px solid rgba(212, 83, 126, 0.2); border-radius: 6px; cursor: pointer; color: #993556; -webkit-tap-highlight-color: transparent; }
@@ -335,9 +410,7 @@ function mountUI() {
         buildShadowHost();
         shadowRoot.innerHTML = `
 <style>${SHADOW_CSS}</style>
-<div id="floater" class="floater" title="HAMHAM">
-    ${HAMSTER_SVG}
-</div>
+<div id="floater" class="floater" title="HAMHAM">${HAMSTER_SVG}</div>
 <div id="panel" class="panel hidden">
     <div class="header">
         <div class="brand">
@@ -372,8 +445,6 @@ function mountUI() {
         const floater = shadowRoot.getElementById('floater');
         const panel = shadowRoot.getElementById('panel');
 
-        // ===== CRITICAL: Pointer Events API for tap detection =====
-        // Works on both mouse and touch, properly distinguishes tap vs drag
         let pDown = false, pStartX = 0, pStartY = 0, pMoved = false;
 
         floater.addEventListener('pointerdown', (e) => {
@@ -406,30 +477,24 @@ function mountUI() {
             floater.classList.remove('pressed');
             if (!pDown) return;
             pDown = false;
-
             if (pMoved) {
-                // save position
                 const r = floater.getBoundingClientRect();
                 getSettings().iconPos = {
                     right: Math.round(window.innerWidth - r.right),
                     top: Math.round(r.top)
                 };
                 save();
-                log('Icon dragged to right=' + Math.round(window.innerWidth - r.right));
             } else {
-                // TAP — open panel
                 log('Icon tapped');
                 togglePanel();
             }
         });
 
         floater.addEventListener('pointercancel', () => {
-            pDown = false;
-            pMoved = false;
+            pDown = false; pMoved = false;
             floater.classList.remove('pressed');
         });
 
-        // Apply saved position
         const s = getSettings();
         if (s.iconPos) {
             if (typeof s.iconPos.right === 'number') floater.style.right = s.iconPos.right + 'px';
@@ -437,10 +502,8 @@ function mountUI() {
         }
         setFloaterVisible(s.iconVisible);
 
-        // Close button
-        shadowRoot.getElementById('btn-close').addEventListener('click', () => { log('Close clicked'); closePanel(); });
+        shadowRoot.getElementById('btn-close').addEventListener('click', closePanel);
 
-        // Tab clicks
         shadowRoot.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const t = tab.dataset.tab;
@@ -452,7 +515,6 @@ function mountUI() {
             });
         });
 
-        // Footer
         panel.addEventListener('click', (e) => {
             const btn = e.target.closest('.foot-btn');
             if (!btn) return;
@@ -466,12 +528,12 @@ function mountUI() {
             }
         });
 
-        // Content area delegation
         shadowRoot.getElementById('content').addEventListener('click', (e) => {
             const el = e.target.closest('[data-action]');
             if (!el) return;
             const action = el.dataset.action;
-            if (action === 'add-loc') promptAddLocation();
+            if (action === 'auto-extract') autoExtract();
+            else if (action === 'add-loc') promptAddLocation();
             else if (action === 'add-npc') promptAddNpc();
             else if (action === 'add-memory') promptAddMemory();
             else if (action === 'del-loc') delItem('locations', +el.dataset.idx);
@@ -487,12 +549,7 @@ function mountUI() {
             }
         });
 
-        log('UI mounted · tap ready · petals default');
-
-        setTimeout(() => {
-            const r = floater.getBoundingClientRect();
-            log(`Icon at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
-        }, 100);
+        log('UI mounted');
     } catch (e) {
         log('mountUI failed: ' + e.message, true);
     }
@@ -520,7 +577,6 @@ function closePanel() {
     shadowRoot.getElementById('panel').classList.add('hidden');
     getSettings().panelVisible = false;
     save();
-    log('Panel closed');
 }
 
 function togglePanel() {
@@ -561,7 +617,7 @@ function renderTab(tab) {
     const data = getCharData();
     const c = shadowRoot.getElementById('content');
     if (!data) {
-        c.innerHTML = '<div class="empty"><b>No character selected</b>Open a character in SillyTavern first. HAMHAM tracks each character\'s world separately.</div>';
+        c.innerHTML = '<div class="empty"><b>No character selected</b>Open a character in SillyTavern first.</div>';
         return;
     }
     if (tab === 'atlas') renderAtlas(c, data);
@@ -605,6 +661,8 @@ function renderAtlas(c, data) {
             </svg>
             ${pins}
         </div>
+        <button class="extract-btn" data-action="auto-extract">🪄 Auto-extract from last 10 messages</button>
+        <div class="extract-hint">Uses your current AI to find NPCs & locations from chat</div>
         <div class="section">
             <div class="section-head"><span class="section-title">Locations</span><button class="add-btn" data-action="add-loc">+ Add</button></div>
             <div class="list">${locList}</div>
@@ -672,13 +730,14 @@ function renderMemory(c, data) {
 function renderAtmosphere(c) {
     const s = getSettings();
     const effects = [
-        { id: 'none', name: 'None', desc: 'Off' },
-        { id: 'petals', name: 'Sakura 🌸', desc: 'Pink petals' },
-        { id: 'rain', name: 'Rain 🌧️', desc: 'Light shower' },
-        { id: 'snow', name: 'Snow ❄️', desc: 'Snowfall' },
-        { id: 'fireflies', name: 'Fireflies ✨', desc: 'Warm glow' },
-        { id: 'stars', name: 'Stars ⭐', desc: 'Twinkle' },
-        { id: 'dust', name: 'Dust', desc: 'Warm motes' }
+        { id: 'none',      name: 'None',        desc: 'Off' },
+        { id: 'petals',    name: '🌸 Sakura',   desc: 'Soft pink petals' },
+        { id: 'lanterns',  name: '🏮 Lanterns', desc: 'Chinese ancient' },
+        { id: 'rain',      name: '🌧️ Rain',    desc: 'Light shower' },
+        { id: 'snow',      name: '❄️ Snow',    desc: 'Gentle snowfall' },
+        { id: 'fireflies', name: '✨ Fireflies', desc: 'Warm glow' },
+        { id: 'stars',     name: '⭐ Stars',    desc: 'Twinkling' },
+        { id: 'dust',      name: 'Dust',        desc: 'Warm motes' }
     ];
     c.innerHTML = `
         <div class="atmos-grid">
@@ -719,7 +778,7 @@ function startAtmosphere(effect, intensity) {
     const resize = () => { atmosCanvas.width = window.innerWidth; atmosCanvas.height = window.innerHeight; };
     resize();
     window.addEventListener('resize', resize);
-    const count = intensity === 'subtle' ? 15 : intensity === 'dramatic' ? 60 : 30;
+    const count = intensity === 'subtle' ? 15 : intensity === 'dramatic' ? 50 : 28;
     atmosParticles = [];
     for (let i = 0; i < count; i++) atmosParticles.push(newParticle(effect));
     function loop() {
@@ -727,21 +786,70 @@ function startAtmosphere(effect, intensity) {
         for (const p of atmosParticles) {
             updateParticle(p, effect);
             drawParticle(p, effect);
-            if (p.y > atmosCanvas.height + 20 || p.x < -20 || p.x > atmosCanvas.width + 20) {
+            const margin = 40;
+            if (p.y > atmosCanvas.height + margin || p.y < -margin || p.x < -margin || p.x > atmosCanvas.width + margin) {
                 Object.assign(p, newParticle(effect));
-                p.y = -20;
             }
         }
         atmosRAF = requestAnimationFrame(loop);
     }
     loop();
-    log('Atmosphere started: ' + effect + ' (' + intensity + ')');
+    log('Atmosphere: ' + effect + ' (' + intensity + ')');
 }
 
 function newParticle(effect) {
     const w = window.innerWidth, h = window.innerHeight;
-    const p = { x: Math.random() * w, y: Math.random() * h - h, vx: 0, vy: 0, size: 3, rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.05, opacity: 0.5 + Math.random() * 0.3, hue: Math.random() };
-    if (effect === 'petals') { p.vx = (Math.random() - 0.5) * 0.8; p.vy = 0.6 + Math.random() * 0.6; p.size = 6 + Math.random() * 5; }
+    const p = {
+        x: Math.random() * w,
+        y: Math.random() * h - h,
+        vx: 0, vy: 0,
+        size: 3,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 0.015,
+        opacity: 0.5 + Math.random() * 0.3,
+        hue: Math.random(),
+        sway: Math.random() * Math.PI * 2,
+        swaySpeed: 0.01 + Math.random() * 0.015,
+        type: 0
+    };
+
+    if (effect === 'petals') {
+        p.vy = 0.35 + Math.random() * 0.55;
+        p.vx = (Math.random() - 0.5) * 0.4;
+        p.size = 7 + Math.random() * 6;
+        p.opacity = 0.35 + Math.random() * 0.35;
+        p.vr = (Math.random() - 0.5) * 0.02;
+    }
+    else if (effect === 'lanterns') {
+        // 30% lanterns (up), 60% plum petals (down), 10% gold sparkles
+        const r = Math.random();
+        if (r < 0.3) {
+            // Lantern floating up
+            p.type = 1;
+            p.vx = (Math.random() - 0.5) * 0.15;
+            p.vy = -0.25 - Math.random() * 0.25;
+            p.size = 11 + Math.random() * 7;
+            p.y = h + 30;
+            p.opacity = 0.75 + Math.random() * 0.25;
+            p.sway = Math.random() * Math.PI * 2;
+            p.swaySpeed = 0.008 + Math.random() * 0.012;
+        } else if (r < 0.9) {
+            // Plum petal falling
+            p.type = 2;
+            p.vx = (Math.random() - 0.5) * 0.5;
+            p.vy = 0.4 + Math.random() * 0.5;
+            p.size = 5 + Math.random() * 4;
+            p.opacity = 0.4 + Math.random() * 0.35;
+            p.vr = (Math.random() - 0.5) * 0.025;
+        } else {
+            // Gold sparkle
+            p.type = 3;
+            p.vx = (Math.random() - 0.5) * 0.3;
+            p.vy = 0.1 + Math.random() * 0.3;
+            p.size = 1.2 + Math.random() * 1.3;
+            p.y = Math.random() * h;
+        }
+    }
     else if (effect === 'rain') { p.vx = -1; p.vy = 7 + Math.random() * 4; p.size = 1; }
     else if (effect === 'snow') { p.vx = (Math.random() - 0.5) * 0.5; p.vy = 0.8 + Math.random() * 0.6; p.size = 2 + Math.random() * 2; }
     else if (effect === 'fireflies') { p.vx = (Math.random() - 0.5) * 0.3; p.vy = (Math.random() - 0.5) * 0.3; p.size = 3; p.y = Math.random() * h; }
@@ -751,20 +859,254 @@ function newParticle(effect) {
 }
 
 function updateParticle(p, effect) {
-    p.x += p.vx; p.y += p.vy; p.rot += p.vr;
-    if (effect === 'fireflies') p.opacity = 0.4 + Math.abs(Math.sin(Date.now() / 700 + p.hue * 10)) * 0.5;
-    if (effect === 'stars') p.opacity = 0.3 + Math.abs(Math.sin(Date.now() / 900 + p.hue * 6)) * 0.6;
+    p.rot += p.vr;
+    p.sway += p.swaySpeed;
+
+    if (effect === 'petals') {
+        // Swaying horizontal motion for realistic drift
+        p.x += p.vx + Math.sin(p.sway) * 0.4;
+        p.y += p.vy;
+    } else if (effect === 'lanterns') {
+        if (p.type === 1) {
+            // Lantern — slow upward drift with gentle sway
+            p.x += p.vx + Math.sin(p.sway) * 0.3;
+            p.y += p.vy;
+            p.opacity = 0.7 + Math.sin(Date.now() / 800 + p.hue * 5) * 0.15;
+        } else if (p.type === 2) {
+            // Plum petal — soft swaying fall
+            p.x += p.vx + Math.sin(p.sway) * 0.5;
+            p.y += p.vy;
+        } else {
+            // Sparkle — twinkle
+            p.x += p.vx;
+            p.y += p.vy;
+            p.opacity = 0.3 + Math.abs(Math.sin(Date.now() / 500 + p.hue * 8)) * 0.65;
+        }
+    } else {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (effect === 'fireflies') p.opacity = 0.4 + Math.abs(Math.sin(Date.now() / 700 + p.hue * 10)) * 0.5;
+        if (effect === 'stars') p.opacity = 0.3 + Math.abs(Math.sin(Date.now() / 900 + p.hue * 6)) * 0.6;
+    }
+}
+
+// Draw a 5-petal sakura flower with soft glow
+function drawSakura(c, p) {
+    c.save();
+    c.translate(p.x, p.y);
+    c.rotate(p.rot);
+
+    const palette = [
+        ['#FFE5EE', '#FFC2D4'],
+        ['#FFD1E0', '#FFAAC6'],
+        ['#FBEAF0', '#F4C0D1'],
+        ['#FFDCE8', '#F7B5CC']
+    ];
+    const [light, deep] = palette[Math.floor(p.hue * palette.length)];
+
+    // Soft outer glow
+    c.shadowColor = light;
+    c.shadowBlur = p.size * 0.8;
+
+    // 5 petals (teardrop ellipses pointing outward)
+    c.fillStyle = light;
+    c.globalAlpha = p.opacity;
+    for (let i = 0; i < 5; i++) {
+        c.save();
+        c.rotate((i * 2 * Math.PI) / 5);
+        c.beginPath();
+        c.ellipse(0, -p.size * 0.55, p.size * 0.36, p.size * 0.62, 0, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+    }
+
+    // Inner darker petal layer for depth
+    c.shadowBlur = 0;
+    c.fillStyle = deep;
+    c.globalAlpha = p.opacity * 0.7;
+    for (let i = 0; i < 5; i++) {
+        c.save();
+        c.rotate((i * 2 * Math.PI) / 5);
+        c.beginPath();
+        c.ellipse(0, -p.size * 0.4, p.size * 0.18, p.size * 0.32, 0, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+    }
+
+    // Gold center
+    c.fillStyle = '#FFD166';
+    c.globalAlpha = p.opacity * 0.85;
+    c.beginPath();
+    c.arc(0, 0, p.size * 0.13, 0, Math.PI * 2);
+    c.fill();
+
+    c.restore();
+}
+
+// Draw a plum blossom (梅花) — smaller, 5 round petals, deeper red
+function drawPlum(c, p) {
+    c.save();
+    c.translate(p.x, p.y);
+    c.rotate(p.rot);
+
+    const palette = [
+        ['#FFD1DC', '#D9527A'],
+        ['#FFC0CB', '#C43358'],
+        ['#FFB6C1', '#B52B4E']
+    ];
+    const [light, deep] = palette[Math.floor(p.hue * palette.length)];
+
+    c.shadowColor = deep;
+    c.shadowBlur = p.size * 0.6;
+
+    // 5 round petals
+    c.fillStyle = light;
+    c.globalAlpha = p.opacity;
+    for (let i = 0; i < 5; i++) {
+        c.save();
+        c.rotate((i * 2 * Math.PI) / 5);
+        c.beginPath();
+        c.arc(0, -p.size * 0.55, p.size * 0.45, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+    }
+
+    // Red center accent
+    c.shadowBlur = 0;
+    c.fillStyle = deep;
+    c.globalAlpha = p.opacity * 0.9;
+    c.beginPath();
+    c.arc(0, 0, p.size * 0.22, 0, Math.PI * 2);
+    c.fill();
+
+    // Gold stamen dots
+    c.fillStyle = '#FFD700';
+    c.globalAlpha = p.opacity;
+    for (let i = 0; i < 5; i++) {
+        c.save();
+        c.rotate((i * 2 * Math.PI) / 5);
+        c.beginPath();
+        c.arc(0, -p.size * 0.28, p.size * 0.06, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+    }
+
+    c.restore();
+}
+
+// Draw a Chinese paper lantern (灯笼) with warm red glow
+function drawLantern(c, p) {
+    c.save();
+    c.translate(p.x, p.y);
+
+    const w = p.size * 1.1;
+    const h = p.size * 1.4;
+
+    // Outer warm glow
+    c.shadowColor = '#FF9933';
+    c.shadowBlur = p.size * 2;
+    c.globalAlpha = p.opacity * 0.5;
+    c.fillStyle = '#FFB347';
+    c.beginPath();
+    c.arc(0, 0, p.size * 0.8, 0, Math.PI * 2);
+    c.fill();
+
+    c.shadowBlur = 0;
+    c.globalAlpha = p.opacity;
+
+    // Lantern body — deep red ellipse with radial inner glow suggested
+    const grad = c.createRadialGradient(0, -h * 0.15, 0, 0, 0, w * 0.6);
+    grad.addColorStop(0, '#FFCC66');
+    grad.addColorStop(0.35, '#E64545');
+    grad.addColorStop(1, '#A01820');
+    c.fillStyle = grad;
+    c.beginPath();
+    c.ellipse(0, 0, w * 0.5, h * 0.5, 0, 0, Math.PI * 2);
+    c.fill();
+
+    // Gold rim top and bottom
+    c.strokeStyle = '#FFD700';
+    c.lineWidth = 1.2;
+    c.beginPath();
+    c.ellipse(0, -h * 0.4, w * 0.38, 2, 0, 0, Math.PI * 2);
+    c.stroke();
+    c.beginPath();
+    c.ellipse(0, h * 0.4, w * 0.38, 2, 0, 0, Math.PI * 2);
+    c.stroke();
+
+    // Vertical rib lines (subtle)
+    c.strokeStyle = 'rgba(255, 180, 90, 0.4)';
+    c.lineWidth = 0.6;
+    for (let i = -1; i <= 1; i++) {
+        c.beginPath();
+        c.moveTo(i * w * 0.18, -h * 0.35);
+        c.lineTo(i * w * 0.18, h * 0.35);
+        c.stroke();
+    }
+
+    // Red tassel below
+    c.strokeStyle = '#C41E3A';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(0, h * 0.5);
+    c.lineTo(0, h * 0.85);
+    c.stroke();
+    c.fillStyle = '#FFD700';
+    c.beginPath();
+    c.arc(0, h * 0.85, 1.5, 0, Math.PI * 2);
+    c.fill();
+
+    // Top string
+    c.strokeStyle = '#8B4513';
+    c.lineWidth = 0.6;
+    c.beginPath();
+    c.moveTo(0, -h * 0.5);
+    c.lineTo(0, -h * 0.7);
+    c.stroke();
+
+    c.restore();
+}
+
+// Draw a tiny gold sparkle
+function drawSparkle(c, p) {
+    c.save();
+    c.translate(p.x, p.y);
+    c.globalAlpha = p.opacity;
+    c.fillStyle = '#FFD700';
+    c.shadowColor = '#FFAA00';
+    c.shadowBlur = p.size * 3;
+    c.beginPath();
+    c.arc(0, 0, p.size, 0, Math.PI * 2);
+    c.fill();
+
+    // Cross shine
+    c.shadowBlur = 0;
+    c.strokeStyle = 'rgba(255, 235, 100, ' + p.opacity + ')';
+    c.lineWidth = 0.5;
+    c.beginPath();
+    c.moveTo(-p.size * 2.5, 0);
+    c.lineTo(p.size * 2.5, 0);
+    c.moveTo(0, -p.size * 2.5);
+    c.lineTo(0, p.size * 2.5);
+    c.stroke();
+    c.restore();
 }
 
 function drawParticle(p, effect) {
     const c = atmosCtx;
+    if (effect === 'petals') {
+        drawSakura(c, p);
+        return;
+    }
+    if (effect === 'lanterns') {
+        if (p.type === 1) drawLantern(c, p);
+        else if (p.type === 2) drawPlum(c, p);
+        else drawSparkle(c, p);
+        return;
+    }
     c.save();
     c.globalAlpha = p.opacity;
-    if (effect === 'petals') {
-        c.translate(p.x, p.y); c.rotate(p.rot);
-        c.fillStyle = ['#F4C0D1', '#ED93B1', '#FBEAF0'][Math.floor(p.hue * 3)];
-        c.beginPath(); c.ellipse(0, 0, p.size, p.size * 0.55, 0, 0, Math.PI * 2); c.fill();
-    } else if (effect === 'rain') {
+    if (effect === 'rain') {
         c.strokeStyle = 'rgba(125,180,220,0.6)'; c.lineWidth = 1.5;
         c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - 2, p.y + 10); c.stroke();
     } else if (effect === 'snow' || effect === 'stars') {
@@ -885,14 +1227,14 @@ function attachDelegation() {
             getSettings().autoBond = $(this).prop('checked');
             save();
         })
-        .on('click.hamham', '#hamham-open-panel-btn', () => { log('Open btn (settings)'); openPanel(); })
+        .on('click.hamham', '#hamham-open-panel-btn', () => { openPanel(); })
         .on('click.hamham', '#hamham-reset-all-btn', resetAllData)
         .on('click.hamham', '#hamham-find-btn', function () {
             if (!shadowRoot) return alert('UI not mounted!');
             const el = shadowRoot.getElementById('floater');
             if (!el) return alert('Icon missing!');
             const r = el.getBoundingClientRect();
-            log(`Finder: x=${Math.round(r.left)} y=${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+            log(`Finder: x=${Math.round(r.left)} y=${Math.round(r.top)}`);
             el.style.background = 'red';
             el.style.transform = 'scale(2)';
             setTimeout(() => { el.style.background = ''; el.style.transform = ''; }, 3000);
